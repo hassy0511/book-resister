@@ -1,0 +1,112 @@
+[
+  {
+    "onix": {
+      "RecordReference": "9784591153956",
+      "NotificationType": "03",
+      "ProductIdentifier": { "ProductIDType": "15", "IDValue": "9784591153956" },
+      "DescriptiveDetail": {
+        "ProductComposition": "00",
+        "ProductForm": "BA",
+        "ProductFormDetail": "B111",
+        "Measure": [
+          { "MeasureType": "01", "Measurement": "268", "MeasureUnitCode": "mm" },
+          { "MeasureType": "02", "Measurement": "212", "MeasureUnitCode": "mm" }
+        ],
+        "Collection": {
+          "CollectionType": "10",
+          "TitleDetail": {
+            "TitleType": "01",
+            "TitleElement": [
+              {
+                "TitleElementLevel": "02",
+                "TitleText": { "collationkey": "ポプラシャノエホン", "content": "ポプラ社の絵本" }
+              },
+              {
+                "TitleElementLevel": "03",
+                "TitleText": { "collationkey": "オシリタンテイ", "content": "おしりたんてい" },
+                "PartNumber": "5"
+              }
+            ]
+          }
+        },
+        "TitleDetail": {
+          "TitleType": "01",
+          "TitleElement": {
+            "TitleElementLevel": "01",
+            "TitleText": { "collationkey": "オシリタンテイ", "content": "おしりたんてい" },
+            "Subtitle": { "collationkey": "ププッ ユキヤマノシロイカイブツ", "content": "ププッ　ゆきやまの　しろいかいぶつ！？" }
+          }
+        },
+        "Contributor": [
+          {
+            "SequenceNumber": "1",
+            "ContributorRole": ["A01"],
+            "PersonName": { "collationkey": "トロル", "content": "トロル" },
+            "BiographicalNote": "坂和由美子（ストーリー担当）と深川直美（作画担当）によるユニット。"
+          }
+        ],
+        "Language": [{ "LanguageRole": "01", "LanguageCode": "jpn", "CountryCode": "JP" }],
+        "Extent": [{ "ExtentType": "11", "ExtentValue": "40", "ExtentUnit": "03" }],
+        "Subject": [
+          { "MainSubject": "", "SubjectSchemeIdentifier": "78", "SubjectCode": "8793" },
+          { "SubjectSchemeIdentifier": "79", "SubjectCode": "21" }
+        ],
+        "Audience": [
+          { "AudienceCodeType": "22", "AudienceCodeValue": "00" },
+          { "AudienceCodeType": "21", "AudienceCodeValue": "03" }
+        ]
+      },
+      "CollateralDetail": {
+        "TextContent": [
+          { "TextType": "03", "ContentAudience": "00", "Text": "おしりたんていが雪山の事件を解決します。" }
+        ],
+        "SupportingResource": [
+          {
+            "ResourceContentType": "01",
+            "ContentAudience": "01",
+            "ResourceMode": "03",
+            "ResourceVersion": [
+              {
+                "ResourceForm": "02",
+                "ResourceVersionFeature": [{ "ResourceVersionFeatureType": "01", "FeatureValue": "D502" }],
+                "ResourceLink": "https://cover.openbd.jp/9784591153956.jpg"
+              }
+            ]
+          }
+        ]
+      },
+      "PublishingDetail": {
+        "Imprint": {
+          "ImprintIdentifier": [
+            { "ImprintIDType": "19", "IDValue": "591" },
+            { "ImprintIDType": "24", "IDValue": "1234" }
+          ],
+          "ImprintName": "ポプラ社"
+        },
+        "PublishingDate": [{ "PublishingDateRole": "01", "Date": "20171012" }]
+      },
+      "ProductSupply": {
+        "SupplyDetail": {
+          "ReturnsConditions": { "ReturnsCodeType": "04", "ReturnsCode": "03" },
+          "ProductAvailability": "99",
+          "Price": [{ "PriceType": "03", "PriceAmount": "1100", "CurrencyCode": "JPY" }]
+        }
+      }
+    },
+    "hanmoto": {
+      "datemodified": "2023-04-01 10:00:00",
+      "datecreated": "2017-08-01 10:00:00",
+      "datekoukai": "2017-08-01"
+    },
+    "summary": {
+      "isbn": "9784591153956",
+      "title": "おしりたんてい",
+      "volume": "",
+      "series": "おしりたんてい",
+      "publisher": "ポプラ社",
+      "pubdate": "20171012",
+      "cover": "https://cover.openbd.jp/9784591153956.jpg",
+      "author": "トロル／作・絵"
+    }
+  }
+]

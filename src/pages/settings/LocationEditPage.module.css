@@ -1,0 +1,32 @@
+.form {
+  display: flex;
+  flex-direction: column;
+}
+
+/* 入力欄どうしの余白は Field 側（.field + .field）が付ける。間に挟む部品はここで揃える */
+.daysField {
+  margin-top: var(--space-5);
+}
+
+.memo {
+  margin-top: var(--space-5);
+}
+
+/* ---- 非表示にする／再表示する ---- */
+.archiveCard {
+  margin-top: var(--space-8);
+}
+
+.archiveText {
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  line-height: 1.6;
+}
+
+.archiveButton {
+  margin-top: var(--space-4);
+}
+
+.archiveDanger {
+  color: var(--color-danger);
+}

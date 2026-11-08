@@ -1,0 +1,99 @@
+.screen {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
+  background: var(--color-bg);
+}
+
+.content {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: calc(var(--safe-top) + var(--space-8)) calc(var(--page-gutter) + var(--safe-right))
+    calc(var(--safe-bottom) + var(--space-10)) calc(var(--page-gutter) + var(--safe-left));
+}
+
+.title {
+  font-size: var(--font-size-2xl);
+  color: var(--color-primary-text);
+}
+
+.lead {
+  margin-top: var(--space-3);
+  color: var(--color-text-secondary);
+  line-height: 1.7;
+}
+
+.steps {
+  counter-reset: step;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  margin-top: var(--space-6);
+}
+
+.steps > li {
+  counter-increment: step;
+  position: relative;
+  padding: var(--space-4) var(--space-4) var(--space-4) 56px;
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-sm);
+}
+
+.steps > li::before {
+  content: counter(step);
+  position: absolute;
+  left: var(--space-4);
+  top: var(--space-4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-full);
+  background: var(--color-primary);
+  color: var(--color-primary-contrast);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-bold);
+}
+
+.steps h2 {
+  font-size: var(--font-size-md);
+  line-height: 28px;
+}
+
+.steps p {
+  margin-top: var(--space-1);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  line-height: 1.7;
+}
+
+.steps a {
+  text-decoration: underline;
+}
+
+.code {
+  margin: var(--space-3) 0 0;
+  padding: var(--space-3);
+  overflow-x: auto;
+  border-radius: var(--radius-md);
+  background: var(--color-surface-2);
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre;
+}
+
+.content code {
+  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 0.9em;
+}
+
+.note {
+  margin-top: var(--space-6);
+  color: var(--color-text-tertiary);
+  font-size: var(--font-size-sm);
+  line-height: 1.7;
+}

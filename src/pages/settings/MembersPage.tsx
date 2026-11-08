@@ -1,0 +1,193 @@
+/*
+ * 家族メンバーと招待（/settings/members）。F-03
+ *   - メンバー一覧（自分に「あなた」、グループを作った人に「作成者」）
+ *   - 「招待リンクを作る」→ createInvite → 共有シート（navigator.share）。
+ *     共有シートが使えなければクリップボードにコピー。それもできなければリンクを選択できる形で表示する。
+ *   - 招待リンクの有効期限は 7 日。
+ */
+import { useRef, useState } from 'react';
+import type { Member, WithId } from '../../types';
+import { useRequiredGroup } from '../../group/GroupProvider';
+import { INVITE_VALID_DAYS, createInvite } from '../../data/invites';
+import { formatDate, todayString } from '../../lib/date';
+import { Button, Card, ListGroup, ListRow, Page, useToast } from '../../components/ui';
+import { CopyIcon, LinkIcon, ShareIcon } from '../../components/ui/icons';
+import { MemberAvatar } from './MemberAvatar';
+import { inviteExpiryDate, inviteShareText } from './settingsLogic';
+import styles from './MembersPage.module.css';
+
+type CreatedInvite = { url: string; text: string; expiry: string };
+
+type Delivery = 'shared' | 'copied' | 'cancelled' | 'failed';
+
+function canShare(): boolean {
+  return typeof navigator !== 'undefined' && typeof navigator.share === 'function';
+}
+
+function isAbortError(e: unknown): boolean {
+  return e instanceof DOMException && e.name === 'AbortError';
+}
+
+async function copyText(text: string): Promise<boolean> {
+  try {
+    if (typeof navigator === 'undefined' || !navigator.clipboard?.writeText) return false;
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** 参加日（Timestamp）を表示用の日付にする */
+function joinedLabel(member: WithId<Member>): string | null {
+  const ms = member.joinedAt?.toMillis?.();
+  if (typeof ms !== 'number' || !Number.isFinite(ms)) return null;
+  return `${formatDate(todayString(new Date(ms)))}に参加`;
+}
+
+export default function MembersPage() {
+  const { groupId, uid, group, members } = useRequiredGroup();
+  const toast = useToast();
+  const [busy, setBusy] = useState(false);
+  const [invite, setInvite] = useState<CreatedInvite | null>(null);
+  const linkRef = useRef<HTMLInputElement>(null);
+
+  const groupName = group?.name ?? '';
+
+  const selectLink = () => {
+    const input = linkRef.current;
+    if (!input) return;
+    input.focus();
+    input.setSelectionRange(0, input.value.length);
+  };
+
+  /** 共有シート → コピー → 選択して表示、の順に試す */
+  const deliver = async (inv: CreatedInvite, mode: 'auto' | 'share' | 'copy'): Promise<Delivery> => {
+    if (mode !== 'copy' && canShare()) {
+      try {
+        await navigator.share({ title: `${groupName}への招待`, text: inv.text, url: inv.url });
+        return 'shared';
+      } catch (e) {
+        if (isAbortError(e)) return 'cancelled';
+        // 時間がたって操作の扱いが切れた（NotAllowedError）など。コピーに切り替える
+        console.warn('[invite] 共有シートを開けませんでした', e);
+      }
+    }
+    if (await copyText(inv.url)) {
+      toast.show('招待リンクをコピーしました。LINE やメッセージに貼り付けて家族に送ってください。', {
+        tone: 'success',
+        duration: 5000,
+      });
+      return 'copied';
+    }
+    if (mode === 'auto' && canShare()) {
+      // 作成を待つ間に操作の扱いが切れて共有シートを開けなかった。ボタンから開き直してもらう
+      toast.show('招待リンクを作りました。下の「共有する」から家族に送ってください。', { tone: 'success' });
+      return 'failed';
+    }
+    toast.show('自動でコピーできませんでした。下のリンクを長押ししてコピーしてください。', { tone: 'error' });
+    // 描画後に選択する
+    setTimeout(selectLink, 50);
+    return 'failed';
+  };
+
+  const handleCreate = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const created = await createInvite(groupId, groupName, uid);
+      const expiry = inviteExpiryDate();
+      const inv: CreatedInvite = { url: created.url, expiry, text: inviteShareText(groupName, expiry) };
+      setInvite(inv);
+      await deliver(inv, 'auto');
+    } catch (err) {
+      console.error(err);
+      const message =
+        err instanceof Error && err.message ? err.message : '招待リンクを作れませんでした。もう一度お試しください。';
+      toast.show(message, { tone: 'error' });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Page title="家族メンバー" back="/settings">
+      <ListGroup title={`メンバー（${members.length}人）`}>
+        {members.map((m) => {
+          const isMe = m.id === uid;
+          const isCreator = group?.createdBy === m.id;
+          const joined = joinedLabel(m);
+          return (
+            <ListRow
+              key={m.id}
+              leading={<MemberAvatar name={m.displayName} />}
+              title={
+                <span className={styles.memberName}>
+                  {m.displayName}
+                  {isMe ? <span className={styles.youBadge}>あなた</span> : null}
+                </span>
+              }
+              subtitle={isCreator ? 'グループを作成' : joined ?? undefined}
+              to={isMe ? '/settings/profile' : undefined}
+              ariaLabel={isMe ? `${m.displayName}（あなた）の表示名を変更` : undefined}
+            />
+          );
+        })}
+      </ListGroup>
+
+      <section className={styles.inviteSection} aria-labelledby="invite-title">
+        <h2 id="invite-title" className={styles.sectionTitle}>
+          家族を招待する
+        </h2>
+        <Card>
+          <p className={styles.inviteText}>
+            招待リンクを LINE やメッセージで家族に送ります。受け取った人がリンクを開いてログインすると、このグループに参加できます。
+          </p>
+          <ul className={styles.notes}>
+            <li>リンクの有効期限は作成から {INVITE_VALID_DAYS} 日間です。</li>
+            <li>リンクを知っている人は誰でも参加できます。家族以外には送らないでください。</li>
+          </ul>
+          <Button
+            size="lg"
+            block
+            icon={<LinkIcon />}
+            loading={busy}
+            onClick={handleCreate}
+            className={styles.createButton}
+          >
+            {invite ? '新しい招待リンクを作る' : '招待リンクを作る'}
+          </Button>
+        </Card>
+
+        {invite ? (
+          <Card tone="primary" className={styles.resultCard}>
+            <label htmlFor="invite-link" className={styles.resultLabel}>
+              招待リンク（{formatDate(invite.expiry)}まで有効）
+            </label>
+            <input
+              id="invite-link"
+              ref={linkRef}
+              className={styles.linkInput}
+              value={invite.url}
+              readOnly
+              onFocus={(e) => e.currentTarget.setSelectionRange(0, e.currentTarget.value.length)}
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+            />
+            <div className={styles.resultActions}>
+              {canShare() ? (
+                <Button variant="secondary" block icon={<ShareIcon />} onClick={() => void deliver(invite, 'share')} disabled={busy}>
+                  共有する
+                </Button>
+              ) : null}
+              <Button variant="secondary" block icon={<CopyIcon />} onClick={() => void deliver(invite, 'copy')} disabled={busy}>
+                コピーする
+              </Button>
+            </div>
+          </Card>
+        ) : null}
+      </section>
+    </Page>
+  );
+}

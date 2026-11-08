@@ -58,7 +58,20 @@ tests/rules/               Firestore セキュリティルールのテスト
 | `groups/{gid}/loans/{id}` | `Loan` | 貸出中は `returnedOn == null` |
 | `groups/{gid}/pushSubscriptions/{id}` | `PushSubscriptionDoc` | ID は endpoint の SHA-256（16 進）。本人のもののみ読み書き |
 
-- 日付（借りた日など）は `'YYYY-MM-DD'`（端末のローカル日付）。作成・更新日時は `serverTimestamp()`。
+- 日付（借りた日など）は `'YYYY-MM-DD'`（端末のローカル日付）。作成・更新日時は `serverTimestamp()`（ルールで `request.time` と一致を確認する）。
+- `firestore.rules` はフィールドの集合（過不足なし）・型・範囲を確認する。文字数の上限は次のとおり（`src/data/common.ts` の `TEXT_LIMITS` と一致させる）。書誌 API から来た値は data 層で切り詰め、利用者の入力は日本語のエラーにする。
+
+| 項目 | 上限 |
+|---|---|
+| 表示名・グループ名・招待の groupName | 1〜50 文字 |
+| 場所の名前 / メモ | 100 / 1000 文字（画面では名前を 40 文字に制限） |
+| シリーズ名 / 全巻数 | 200 文字 / 1〜9999 |
+| 本のタイトル / 出版社 | 300 / 200 文字 |
+| 著者 | 50 人まで、1 人 200 文字、合計 2000 文字 |
+| 表紙 URL | `http(s)://` で始まる 2048 文字以内 |
+| 巻数 | 0〜99999 の整数 |
+| 感想 / 評価 | 2000 文字 / 1〜5 の整数 |
+| 招待コード / 有効期限 | `^[A-Za-z0-9_-]{16,64}$` / 作成時刻 + 8 日以内（端末の時計のずれを見込む） |
 - **複合インデックスは使わない。** クエリは単一フィールドの条件か並び替えのみとし、残りはクライアントで絞り込む・並べ替える（家族規模なので件数は少ない）。
 - `Loan.book` は本情報のコピー。`updateBook` で本を編集したら、その本の貸出記録の `book` も一括更新する。
 
@@ -67,13 +80,15 @@ tests/rules/               Firestore セキュリティルールのテスト
 ### 4.1 `src/lib/date.ts`
 
 ```ts
-todayString(): DateString                         // 端末のローカル日付
+todayString(now?: Date): DateString              // 端末のローカル日付（now はテスト用）
 addDays(date: DateString, days: number): DateString
 diffDays(from: DateString, to: DateString): number // to - from（日数）
-formatDate(date: DateString, opts?: { withYear?: boolean }): string // 例 "11月8日(土)"。今年でなければ年を付ける
+formatDate(date: DateString, opts?: { withYear?: boolean; today?: DateString }): string // 例 "11月8日(日)"。今年でなければ年を付ける
 dueStatus(dueOn: DateString, today?: DateString): 'overdue' | 'soon' | 'ok' // soon = 今日〜3日後
 dueLabel(dueOn: DateString, today?: DateString): string // 例 "2日超過" "今日まで" "明日まで" "あと5日"
 ```
+
+- 不正な入力でも例外は出さない（描画中に落とさないため）。addDays は入力をそのまま、diffDays は NaN、formatDate は入力をそのまま、dueStatus は 'ok'、dueLabel は '' を返す。
 
 ### 4.2 `src/lib/isbn.ts`
 
@@ -89,7 +104,7 @@ formatIsbn(isbn13: string): string           // 表示用（ハイフン区切�
 ```ts
 guessSeries(title: string): { seriesName: string | null; volume: number | null }
   // 「おしりたんてい (3)」「マジック・ツリーハウス 12」「〇〇 第3巻」「〇〇 ③」「〇〇 vol.2」などから推定
-normalizeSeriesName(name: string): string   // 比較用（NFKC、空白・記号除去、小文字化）
+normalizeSeriesName(name: string): string   // 比較用（NFKC、空白・記号除去、小文字化、末尾の「シリーズ」除去）
 findMatchingSeries<T extends { name: string }>(name: string, list: T[]): T | null
 ```
 
@@ -104,6 +119,8 @@ searchByTitle(query: string, opts?: { signal?: AbortSignal }): Promise<BookCandi
 ```
 
 - 各 API 呼び出しは try/catch し、失敗（CORS・タイムアウト・上限）しても例外を外に出さない。タイムアウト 8 秒。
+- 出版社のレーベル名らしいシリーズ名（末尾が 文庫・新書・コミックス・絵本 など）はシリーズとして使わず、タイトルから推定する。
+- `searchByTitle` に ISBN として読める文字列を渡すと `lookupByIsbn` の結果（0 件か 1 件）を返す。
 - Google Books は `VITE_GOOGLE_BOOKS_API_KEY` があれば `key=` を付ける。
 - 表紙が無い場合は NDL のサムネイル URL `https://ndlsearch.ndl.go.jp/thumbnail/{isbn13}.jpg` を候補にしてよい（`<img>` 表示のみ。読み込み失敗時は `BookCover` がプレースホルダに切り替える）。
 
@@ -117,6 +134,10 @@ enablePush(groupId: string, uid: string): Promise<void>  // 許可を求め、�
 disablePush(groupId: string): Promise<void>
 showTestNotification(): Promise<void> // SW の showNotification でローカル表示
 ```
+
+- 端末の購読が現在の `VITE_VAPID_PUBLIC_KEY` と違う鍵で作られていれば 'off' を返す（enablePush で作り直す）。
+- 保存する購読情報は `{ uid, endpoint, keys: { p256dh, auth }, userAgent, createdAt }` のみ（ルールが余計なフィールドを拒否する）。
+- ログアウト時は設定画面が先に `disablePush(groupId)` を呼ぶ（失敗は無視、最大 3 秒）。
 
 ### 4.6 `src/firebase.ts`
 
@@ -140,8 +161,12 @@ useAuth(): {
   signUpWithEmail(email: string, password: string): Promise<void>;
   sendPasswordReset(email: string): Promise<void>;
   signOut(): Promise<void>;
+  redirectError: string | null;                 // redirect でのログイン失敗（日本語）。ログイン画面に表示する
 }
 ```
+
+- 失敗時は日本語メッセージの Error を投げる（元の `code` と `cause` を保持）。利用者が Google のポップアップを自分で閉じた場合はエラーにしない。
+- ログイン画面はログイン成功後に navigate しない（App の `/login` ルートが戻り先へ移す）。
 
 ### 4.8 `src/group/GroupProvider.tsx`
 
@@ -155,17 +180,27 @@ useGroup(): {
   members: WithId<Member>[];
   memberName(uid: string): string;              // 不明なら '（不明）'
   createGroup(groupName: string, displayName: string): Promise<string>;  // group + member + users を 1 バッチで
-  joinGroup(code: string, displayName: string): Promise<void>;           // member + users を 1 バッチで
+  joinGroup(code: string, displayName: string): Promise<void>;           // member + users（+ 前のグループの member 削除）を 1 バッチで
   updateDisplayName(displayName: string): Promise<void>;                 // users と members の両方
   updateGroupName(name: string): Promise<void>;
+  error: Error | null;                          // 読み込みエラー（日本語）
 }
 useRequiredGroup(): { groupId: string; uid: string; ... }  // グループ参加済みの画面用（未参加なら例外）
 ```
+
+- `groups/{gid}` の読み取りが（再試行後も）permission-denied なら、メンバーでなくなったとみなして `groupId` を null にする。
+- `joinGroup` は同じグループに参加済みなら何もしない。別のグループに参加中なら、前のグループの `members/{uid}` を同じバッチで削除する（1 人 1 グループ。前のグループのデータと通知から外れる）。画面（JoinPage）は別グループ参加中の人の参加を止めて案内する。
+- 文字数は表示名・グループ名とも 50 文字まで。
 
 ### 4.9 `src/data/*`
 
 共通: フックは `QueryResult<T> = { data: T; loading: boolean; error: Error | null }` を返す（`src/data/common.ts`）。
 フックは `useRequiredGroup()` から groupId を取る。書き込み関数は第 1 引数に `groupId` を取る。
+
+- 書き込み関数はサーバーの応答を最大 4 秒待ち、それを過ぎたら（またはオフラインなら）端末に保存済みとして完了する（後で自動送信）。待ち時間内に返ったエラー（権限など）は日本語の Error で投げる。`createGroup` / `joinGroup` は常にサーバーの保存を待ち、`createInvite` は最大 15 秒待つ。
+- 書き込み前に入力を確認し、不正なら日本語の Error を投げる（貸出期間 1〜365 の整数、評価 1〜5、日付は実在する YYYY-MM-DD、返却日は借りた日以降、名前・タイトルは必須、3 章の文字数の上限）。
+- 購読フックは permission-denied を数回（0.5〜6 秒）再試行する（グループ作成・参加の直後の反映待ち）。
+- `useBook` / `useLoan` / `useSeries` はキャッシュに無いだけの「存在しない」ではサーバーの応答を待つ。ID が不正なら `{ data: null, loading: false }`。
 
 ```ts
 // locations.ts
@@ -202,7 +237,7 @@ createLoans(gid, uid, inputs: NewLoanInput[]): Promise<string[]>   // 1 バッ�
 updateLoan(gid, loanId, patch: Partial<Pick<Loan, 'dueOn' | 'locationId' | 'borrowerUid' | 'borrowedOn' | 'rating' | 'review' | 'readStatus' | 'returnedOn'>>): Promise<void>
 type ReturnInput = { loanId: string; returnedOn: DateString; readStatus: ReadStatus; rating: number | null; review: string | null }
 returnLoans(gid, items: ReturnInput[]): Promise<void>               // 1 バッチ
-undoReturn(gid, loanId): Promise<void>                              // returnedOn と readStatus を null に戻す
+undoReturn(gid, loanId): Promise<void>                              // returnedOn と readStatus を null に戻す（評価・感想は残す）
 deleteLoan(gid, loanId): Promise<void>                              // 誤登録の削除
 
 // invites.ts
@@ -210,8 +245,9 @@ createInvite(gid, groupName: string, uid: string): Promise<{ code: string; url: 
 getInvite(code: string): Promise<WithId<Invite> | null>              // 期限切れは null
 
 // readStatus.ts（純粋関数）
-bookReadState(loans: Loan[]): 'reading' | 'read' | 'partial' | 'unread' | 'none'
+bookReadState(loans: Pick<Loan, 'returnedOn' | 'readStatus'>[]): BookReadState  // 'reading' | 'read' | 'partial' | 'unread' | 'none'
   // 貸出中があれば 'reading'、それ以外は返却済みの中で最良（read > partial > unread）、貸出なしは 'none'
+  // 返却済みで readStatus が null の記録は 'unread'。表示名は BOOK_READ_STATE_LABELS（reading = 「貸出中」）
 ```
 
 ### 4.10 `src/state/borrowCart.tsx`
@@ -227,7 +263,7 @@ useBorrowCart(): {
   remove(key: string): void;
   clear(): void;
 }
-type CartItem = {
+type CartItem = {                   // 型は src/state/borrowCartLogic.ts に置き、borrowCart.tsx から再 export
   key: string;                      // ISBN があれば isbn13、無ければランダム
   status: 'loading' | 'ready' | 'not-found';
   candidate: BookCandidate | null;  // not-found の場合は null（タイトル手入力を促す）
@@ -239,11 +275,23 @@ type CartItem = {
 }
 ```
 
+- BorrowCartProvider は `/login` を含む全ルートの外側にあるため、`useRequiredGroup()` ではなく `useGroup()` を使う（未参加ならグループの照合をしない）。
+- 別のグループのユーザーがログインしたらカートを空にする。読み込み中のまま再起動した項目は取得し直す。
+- 書誌が見つからない項目は、利用者がタイトルを入力しても status は 'not-found' のまま。登録できるのは「読み込み中でなく、タイトルのある candidate を持つ」項目（`isItemResolved`）。
+
 ### 4.11 UI 部品（`src/components/ui/`、`src/components/`）
 
-`Button`（variant: primary / secondary / danger / ghost、size、block）、`IconButton`、`Card`、`ListRow`、`PageHeader`（title, back, right）、`Page`（PageHeader＋スクロール領域、セーフエリア対応）、`BottomTabBar`、`Sheet`（下から出るモーダル）、`ConfirmDialog`、`TextField`、`NumberField`、`DateField`（`<input type="date">`）、`Select`、`SegmentedControl`、`Chips`（絞り込み用）、`StarRating`、`EmptyState`、`Spinner`、`ToastProvider` / `useToast()`（`show(message, { action?: { label, onClick } })`）、`icons.tsx`（インライン SVG アイコン）。
+`Button`（variant: primary / secondary / danger / ghost、size、block）、`IconButton`、`Card`、`ListRow`、`PageHeader`（title, back, right）、`Page`（PageHeader＋スクロール領域、セーフエリア対応）、`BottomTabBar`、`Sheet`（下から出るモーダル）、`ConfirmDialog`、`TextField`、`NumberField`、`DateField`（`<input type="date">`）、`Select`、`SegmentedControl`、`Chips`（絞り込み用）、`StarRating`、`EmptyState`、`Spinner`、`ToastProvider` / `useToast()`（`{ show(message, { action?: { label, onClick }, tone?: 'default' | 'success' | 'error', duration? }), dismiss }`）、`icons.tsx`（インライン SVG アイコン）。
+追加: `LinkButton` / `IconLinkButton`、`ListGroup`、`TextArea`、`ErrorState` / `errorMessage`、`Field`、`layout/SplashScreen`、`layout/ErrorBoundary`、`layout/tabBarVisibility`（`useHideTabBar()`）、`ui/index.ts`（まとめて import 用）。
 
-ドメイン部品: `BookCover`（画像＋読み込み失敗時のプレースホルダ）、`DueBadge`（`dueStatus` で色分け）、`LoanRow`（表紙・タイトル・場所名・借りた人・返却日バッジ。props で名前を受け取る）、`ReadStatusPicker`（読んだ / 途中まで / 読んでいない。既定 read）、`ReviewEditor`（★と感想）、`SeriesPicker`（既存シリーズ選択 or 新規名入力＋巻数）、`ReadStateBadge`（`bookReadState` の表示）。
+- 入力部品（TextField / TextArea / NumberField / DateField / Select / SegmentedControl / Chips / StarRating）の `onChange` はイベントではなく値を受け取る（NumberField は `number | null`、Chips は `T | null`）。
+- 画面は default export。ルート要素は親の高さいっぱい（`Page` を使えば自動）。body はスクロールせず `Page` の中の main がスクロールする。下部に固定するボタンは `Page` の `footer` に置く。`Page` のスクロール領域の直下の要素は縦に縮まない（`contentClassName` で flex の縦並びにしても Card が潰れない）。
+
+ドメイン部品: `BookCover`（画像＋読み込み失敗時のプレースホルダ）、`DueBadge`（`dueStatus` で色分け）、`LoanRow`（表紙・タイトル・場所名・借りた人・返却日バッジ。props で名前を受け取る）、`ReadStatusPicker`（読んだ / 途中まで / 読んでいない。既定 read）、`ReviewEditor`（★と感想。`value: { rating, review: string }`、保存時は `reviewToPatch()` で空文字を null に）、`SeriesPicker`（既存シリーズ選択 or 新規名入力＋巻数。シリーズは作らない。保存時に `findOrCreateSeries`）、`ReadStateBadge`（`{ state }` に `bookReadState(loans)` の結果を渡す）。
+
+スキャナ: `<BarcodeScanner onDetect={(isbn13) => void} active={boolean} />`（任意で `guideText`、`manualSubmitLabel`、`className`）。`isBookEan` を通ったコードだけを渡し、同じコードは見えなくなってから 2.5 秒は再通知しない（手入力は抑止しない）。カメラが使えない場合は案内と ISBN の手入力欄を出す。重複の扱いは画面側（`cart.addIsbn` の 'duplicate'）。
+
+日付の補助: `src/pages/home/useToday.ts`（`useToday()`。アプリに戻ったときと 1 分ごとに今日の日付を更新）。ホーム・返却・貸出詳細・借りる確認・履歴・シリーズの各画面で使う。
 
 ## 5. 画面とルート
 
@@ -271,7 +319,12 @@ type CartItem = {
 
 下部タブ: ホーム（`/`）・スキャン（`/scan?mode=borrow`）・履歴（`/history`）・シリーズ（`/series`）・設定（`/settings`）。タブはログイン済みかつグループ参加済みの画面でのみ表示。
 
-ガード: 未ログイン → `/login`（`/join/:code` から来た場合はログイン後に戻す。戻り先は `sessionStorage` に保存）。ログイン済みでグループ未参加 → `/welcome`（`/join/:code` は除く）。
+ガード: 未ログイン → `/login`（`/join/:code` から来た場合はログイン後に戻す。戻り先は `sessionStorage` に保存。アプリ内のパスのみ）。ログイン済みでグループ未参加 → `/welcome`（`/join/:code` は除く）。グループ情報の読み込みが権限以外のエラーなら `/welcome` へ送らずエラーと再読み込みボタンを出す（グループの二重作成を防ぐ）。
+
+- `/welcome` はグループ参加済みでも表示できる（作成直後に「最初の場所の登録」へ進むため）。`/join/:code` も同様で、参加済み・別グループ参加中の案内は画面側で行う。
+- `/return` は `?loans` と `?location` の両方があれば `?loans` を優先する。ホームの「まとめて返却」は借りた人で絞り込み中なら `?loans=`（表示中の分だけ）にする。
+- ホームの絞り込みは URL（`?location=` / `?borrower=`）に、表示の切り替え（場所ごと／返却日順）は localStorage に保存する。履歴の検索語・絞り込みも URL に保存する。
+- `/scan`・`/borrow/confirm`・`/borrow/add`・`/return` は下部タブを隠す（戻るボタンで戻る）。
 
 ## 6. 通知（`scripts/notify`）
 

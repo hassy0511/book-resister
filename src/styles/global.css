@@ -1,0 +1,328 @@
+/*
+ * アプリ全体の CSS 変数とリセット。
+ * 部品・画面の CSS Modules からは var(--color-primary) などで参照する。
+ */
+
+:root {
+  color-scheme: light dark;
+
+  /* ---- 色（ライト） ---- */
+  --color-primary: #2f6f5e;
+  --color-primary-pressed: #255a4c;
+  --color-primary-contrast: #ffffff;
+  --color-primary-soft: #e2efe9;
+  --color-primary-text: #2f6f5e; /* 背景上に置く緑の文字 */
+
+  --color-bg: #f7f5f0;
+  --color-surface: #ffffff;
+  --color-surface-2: #efece5; /* 入力欄・二次的な面 */
+  --color-surface-pressed: #ebe7de;
+  --color-border: #e0dbd0;
+  --color-separator: rgba(60, 60, 50, 0.14);
+
+  --color-text: #1f2421;
+  --color-text-secondary: #5c625d;
+  --color-text-tertiary: #8a8f89;
+  --color-text-on-dark: #ffffff;
+
+  --color-danger: #c62828;
+  --color-danger-pressed: #a51f1f;
+  --color-danger-soft: #fdeceb;
+  --color-warning: #c75f00;
+  --color-warning-soft: #fff0df;
+  --color-success: #2e7d4f;
+  --color-success-soft: #e3f3e8;
+  --color-info: #2f5f8a;
+  --color-info-soft: #e5eef7;
+
+  /* 返却日の色分け（延滞＝赤、3 日以内＝オレンジ） */
+  --color-overdue: var(--color-danger);
+  --color-overdue-bg: var(--color-danger-soft);
+  --color-soon: var(--color-warning);
+  --color-soon-bg: var(--color-warning-soft);
+  --color-ok: var(--color-text-secondary);
+  --color-ok-bg: var(--color-surface-2);
+
+  --color-star: #f2a900;
+  --color-focus: #2f80ed;
+  --color-overlay: rgba(20, 24, 22, 0.42);
+  --color-toast-bg: #26302c;
+  --color-toast-text: #ffffff;
+  --color-toast-action: #9fe0c9;
+
+  /* ---- 余白 ---- */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --page-gutter: 16px;
+
+  /* ---- 角丸 ---- */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 22px;
+  --radius-full: 999px;
+
+  /* ---- 影 ---- */
+  --shadow-sm: 0 1px 2px rgba(30, 36, 33, 0.08);
+  --shadow-md: 0 2px 8px rgba(30, 36, 33, 0.1), 0 1px 2px rgba(30, 36, 33, 0.06);
+  --shadow-lg: 0 10px 30px rgba(30, 36, 33, 0.18), 0 2px 6px rgba(30, 36, 33, 0.08);
+
+  /* ---- 文字 ---- */
+  --font-family: -apple-system, BlinkMacSystemFont, 'Hiragino Sans', 'Hiragino Kaku Gothic ProN',
+    'Noto Sans JP', 'Yu Gothic UI', Meiryo, system-ui, sans-serif;
+  --font-size-xs: 12px;
+  --font-size-sm: 14px;
+  --font-size-md: 16px;
+  --font-size-lg: 18px;
+  --font-size-xl: 20px;
+  --font-size-2xl: 24px;
+  --font-size-3xl: 30px;
+  --line-height: 1.5;
+  --font-weight-bold: 700;
+  --font-weight-medium: 600;
+
+  /* ---- サイズ ---- */
+  --tap-size: 44px;
+  --header-height: 52px;
+  --tabbar-height: 56px;
+
+  /* ---- セーフエリア ---- */
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+
+  /*
+   * 下部タブの有無で変わる値（AppLayout が <html data-tabbar="shown"> を切り替える）
+   *   --tabbar-offset     画面下端からタブの上端まで（トーストなどの位置）
+   *   --page-bottom-inset ページ下端に必要な余白（タブがあるときはタブ側でセーフエリアを処理）
+   */
+  --tabbar-offset: var(--safe-bottom);
+  --page-bottom-inset: var(--safe-bottom);
+
+  /* ---- 重なり順 ---- */
+  --z-header: 10;
+  --z-tabbar: 100;
+  --z-sheet: 900;
+  --z-toast: 1000;
+
+  /* ---- 動き ---- */
+  --duration-fast: 120ms;
+  --duration-normal: 220ms;
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+:root[data-tabbar='shown'] {
+  --tabbar-offset: calc(var(--tabbar-height) + var(--safe-bottom));
+  --page-bottom-inset: 0px;
+}
+
+/* ---- 色（ダーク） ---- */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-primary: #3f8f78;
+    --color-primary-pressed: #357a66;
+    --color-primary-contrast: #ffffff;
+    --color-primary-soft: #1f3a32;
+    --color-primary-text: #7cc9b0;
+
+    --color-bg: #121514;
+    --color-surface: #1c201e;
+    --color-surface-2: #262b28;
+    --color-surface-pressed: #2c322f;
+    --color-border: #343b37;
+    --color-separator: rgba(220, 230, 225, 0.12);
+
+    --color-text: #eef1ee;
+    --color-text-secondary: #b0b8b2;
+    --color-text-tertiary: #7f8882;
+
+    --color-danger: #ff6b63;
+    --color-danger-pressed: #e85a52;
+    --color-danger-soft: #3d1f1d;
+    --color-warning: #ffa94d;
+    --color-warning-soft: #3b2a17;
+    --color-success: #6fcf97;
+    --color-success-soft: #193225;
+    --color-info: #8ab8e6;
+    --color-info-soft: #1b2a3a;
+
+    --color-star: #ffc233;
+    --color-focus: #6aa8ff;
+    --color-overlay: rgba(0, 0, 0, 0.6);
+    --color-toast-bg: #e9eeeb;
+    --color-toast-text: #1a1f1c;
+    --color-toast-action: #2f6f5e;
+
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+    --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.45);
+    --shadow-lg: 0 10px 30px rgba(0, 0, 0, 0.55);
+  }
+}
+
+/* ---- リセット ---- */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  -webkit-tap-highlight-color: transparent;
+  height: 100%;
+  /* 画面全体のバウンスやプル更新を抑える（スクロールは各ページの領域で行う） */
+  overscroll-behavior: none;
+}
+
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-family);
+  font-size: var(--font-size-md);
+  line-height: var(--line-height);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-feature-settings: 'palt' 0;
+}
+
+#root {
+  height: 100%;
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  isolation: isolate;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+p,
+figure,
+blockquote,
+dl,
+dd,
+ol,
+ul {
+  margin: 0;
+}
+
+ol,
+ul {
+  padding: 0;
+  list-style: none;
+}
+
+h1,
+h2,
+h3,
+h4 {
+  font-size: inherit;
+  font-weight: var(--font-weight-bold);
+  line-height: 1.35;
+}
+
+img,
+svg,
+video,
+canvas {
+  display: block;
+  max-width: 100%;
+}
+
+a {
+  color: var(--color-primary-text);
+  text-decoration: none;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+  letter-spacing: inherit;
+}
+
+button {
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+
+button,
+a,
+[role='button'],
+label,
+summary {
+  touch-action: manipulation;
+}
+
+button:disabled {
+  cursor: default;
+}
+
+/* iOS の入力時ズームを防ぐため 16px 以上 */
+input,
+select,
+textarea {
+  font-size: max(16px, 1rem);
+}
+
+textarea {
+  resize: vertical;
+}
+
+/* フォーカス表示（キーボード操作時） */
+:focus {
+  outline: none;
+}
+
+:focus-visible {
+  outline: 3px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+::selection {
+  background: var(--color-primary-soft);
+}
+
+/* ---- ユーティリティ ---- */
+
+/* 画面読み上げ用（見た目には表示しない） */
+.visually-hidden {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+  }
+}

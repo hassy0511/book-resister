@@ -1,0 +1,84 @@
+.group {
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  width: 100%;
+  border-radius: var(--radius-md);
+  background: var(--color-surface-2);
+}
+
+.segment {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 38px;
+  padding: 0 var(--space-2);
+  border-radius: calc(var(--radius-md) - 3px);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  line-height: 1.2;
+  user-select: none;
+  -webkit-user-select: none;
+  transition:
+    background-color var(--duration-fast) ease,
+    color var(--duration-fast) ease,
+    box-shadow var(--duration-fast) ease;
+}
+
+/* 見た目は 38px でもタップ領域は外枠の余白込みで 44px */
+.segment {
+  position: relative;
+}
+
+.segment::after {
+  content: '';
+  position: absolute;
+  inset: -3px -1px;
+}
+
+.md .segment {
+  min-height: 38px;
+}
+
+.lg .segment {
+  min-height: 46px;
+  font-size: var(--font-size-md);
+}
+
+.segment:disabled {
+  opacity: 0.45;
+}
+
+.segment:focus-visible {
+  outline-offset: -2px;
+}
+
+.selected {
+  background: var(--color-surface);
+  color: var(--color-text);
+  box-shadow: var(--shadow-sm);
+}
+
+.primary .selected {
+  background: var(--color-primary);
+  color: var(--color-primary-contrast);
+}
+
+.icon {
+  display: inline-flex;
+}
+
+.icon > svg {
+  width: 18px;
+  height: 18px;
+}
+
+.label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

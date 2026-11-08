@@ -1,0 +1,54 @@
+.screen {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  flex: 1;
+  min-height: 0;
+  padding: calc(var(--safe-top) + var(--space-8)) calc(var(--page-gutter) + var(--safe-right))
+    calc(var(--safe-bottom) + var(--space-8)) calc(var(--page-gutter) + var(--safe-left));
+  background: var(--color-bg);
+  text-align: center;
+  overflow-y: auto;
+}
+
+.icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 64px;
+  height: 64px;
+  border-radius: var(--radius-full);
+  background: var(--color-danger-soft);
+  color: var(--color-danger);
+}
+
+.title {
+  font-size: var(--font-size-xl);
+}
+
+.message {
+  max-width: 28em;
+  color: var(--color-text-secondary);
+  line-height: 1.7;
+}
+
+.detail {
+  max-width: 28em;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-2);
+  color: var(--color-text-tertiary);
+  font-size: var(--font-size-xs);
+  overflow-wrap: anywhere;
+}
+
+.actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  width: 100%;
+  max-width: 360px;
+  margin-top: var(--space-4);
+}

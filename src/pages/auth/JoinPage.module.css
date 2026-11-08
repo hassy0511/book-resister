@@ -1,0 +1,73 @@
+.joinWrap {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  width: 100%;
+  max-width: 440px;
+  margin: 0 auto;
+}
+
+/* ---- 招待のカード ---- */
+.inviteCard {
+  text-align: center;
+}
+
+.inviteIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 64px;
+  height: 64px;
+  margin: var(--space-2) auto var(--space-3);
+  border-radius: var(--radius-full);
+  background: var(--color-primary-soft);
+  color: var(--color-primary-text);
+}
+
+.inviteLabel {
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.groupName {
+  margin-top: var(--space-1);
+  font-size: var(--font-size-2xl);
+  overflow-wrap: anywhere;
+}
+
+.question {
+  margin-top: var(--space-1);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-lg);
+}
+
+/* ---- フォーム ---- */
+.form {
+  display: flex;
+  flex-direction: column;
+}
+
+.submit {
+  margin-top: var(--space-5);
+}
+
+/* ---- アカウント ---- */
+.account {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+  text-align: center;
+}
+
+.accountText {
+  color: var(--color-text-tertiary);
+  font-size: var(--font-size-sm);
+  overflow-wrap: anywhere;
+}
+
+.switchAccount {
+  display: flex;
+  justify-content: center;
+  margin-top: calc(-1 * var(--space-4));
+}

@@ -1,0 +1,57 @@
+[
+  {
+    "onix": {
+      "RecordReference": "9784088833132",
+      "NotificationType": "03",
+      "ProductIdentifier": { "ProductIDType": "15", "IDValue": "9784088833132" },
+      "DescriptiveDetail": {
+        "ProductComposition": "00",
+        "ProductForm": "BA",
+        "ProductFormDetail": "B108",
+        "Collection": {
+          "CollectionType": "10",
+          "TitleDetail": {
+            "TitleType": "01",
+            "TitleElement": [
+              {
+                "TitleElementLevel": "02",
+                "TitleText": { "collationkey": "ジャンプコミックス", "content": "ジャンプコミックス" }
+              }
+            ]
+          }
+        },
+        "TitleDetail": {
+          "TitleType": "01",
+          "TitleElement": {
+            "TitleElementLevel": "01",
+            "TitleText": { "collationkey": "ワンピース", "content": "ＯＮＥ　ＰＩＥＣＥ" },
+            "PartNumber": "104"
+          }
+        },
+        "Contributor": [
+          {
+            "SequenceNumber": "1",
+            "ContributorRole": ["A01"],
+            "PersonName": { "collationkey": "オダ,エイイチロウ", "content": "尾田 栄一郎" }
+          }
+        ],
+        "Language": [{ "LanguageRole": "01", "LanguageCode": "jpn", "CountryCode": "JP" }]
+      },
+      "PublishingDetail": {
+        "Imprint": { "ImprintName": "集英社" },
+        "PublishingDate": [{ "PublishingDateRole": "01", "Date": "20221104" }]
+      }
+    },
+    "hanmoto": { "datecreated": "2022-10-01 10:00:00" },
+    "summary": {
+      "isbn": "9784088833132",
+      "title": "ＯＮＥ　ＰＩＥＣＥ",
+      "volume": "104",
+      "series": "ジャンプコミックス",
+      "publisher": "集英社",
+      "pubdate": "20221104",
+      "cover": "",
+      "author": "尾田栄一郎／著"
+    }
+  }
+]

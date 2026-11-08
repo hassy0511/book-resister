@@ -1,0 +1,107 @@
+.content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.emptyNote {
+  margin-top: var(--space-2);
+}
+
+.count {
+  padding: 0 var(--space-1);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+.list > li + li {
+  border-top: 1px solid var(--color-separator);
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 80px;
+  padding: var(--space-3) var(--space-4);
+  color: var(--color-text);
+  text-decoration: none;
+  -webkit-touch-callout: none;
+  transition: background-color var(--duration-fast) ease;
+}
+
+.row:active {
+  background: var(--color-surface-pressed);
+}
+
+.main {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  flex: 1;
+  min-width: 0;
+}
+
+.name {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  font-weight: var(--font-weight-bold);
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.meta {
+  display: flex;
+  flex-wrap: wrap;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  line-height: 1.4;
+  font-variant-numeric: tabular-nums;
+}
+
+.meta > span + span::before {
+  content: '·';
+  margin: 0 6px;
+  color: var(--color-text-tertiary);
+}
+
+.progress {
+  position: relative;
+  display: block;
+  height: 6px;
+  margin: 2px 0;
+  overflow: hidden;
+  border-radius: var(--radius-full);
+  background: var(--color-surface-2);
+}
+
+.progressBorrowed,
+.progressRead {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: var(--radius-full);
+}
+
+.progressBorrowed {
+  background: var(--color-primary-soft);
+  box-shadow: inset 0 0 0 1px var(--color-primary);
+}
+
+.progressRead {
+  background: var(--color-primary);
+}
+
+.last {
+  color: var(--color-text-tertiary);
+  font-size: var(--font-size-xs);
+}
+
+.chevron {
+  flex-shrink: 0;
+  margin-right: calc(-1 * var(--space-1));
+  color: var(--color-text-tertiary);
+}

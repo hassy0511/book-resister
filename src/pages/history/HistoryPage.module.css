@@ -1,0 +1,252 @@
+.content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+/* スクロール領域を見つけるための目印（大きさなし） */
+.anchor {
+  display: none;
+}
+
+/* ---- 検索と件数 ---- */
+.searchForm {
+  flex-shrink: 0;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  min-height: var(--tap-size);
+}
+
+.count {
+  min-width: 0;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+.count strong {
+  margin: 0 1px;
+  color: var(--color-text);
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-bold);
+}
+
+.countTotal {
+  margin-left: var(--space-1);
+  color: var(--color-text-tertiary);
+}
+
+/* ---- 設定中の絞り込み ---- */
+.tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  min-height: 36px;
+  padding: 6px 10px 6px 14px;
+  border-radius: var(--radius-full);
+  background: var(--color-primary-soft);
+  color: var(--color-primary-text);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  transition: opacity var(--duration-fast) ease;
+}
+
+.tag:active {
+  opacity: 0.7;
+}
+
+.tagLabel {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---- 月ごとのまとまり ---- */
+.month {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.monthHeading {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin: 0 calc(-1 * var(--page-gutter));
+  padding: var(--space-2) var(--page-gutter);
+  background: var(--color-bg);
+  font-size: var(--font-size-md);
+}
+
+.monthCount {
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  font-weight: normal;
+  font-variant-numeric: tabular-nums;
+}
+
+.list > li + li {
+  border-top: 1px solid var(--color-separator);
+}
+
+.end {
+  padding: var(--space-2) 0;
+  color: var(--color-text-tertiary);
+  font-size: var(--font-size-sm);
+  text-align: center;
+}
+
+/* ---- 1 行 ---- */
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 80px;
+  padding: var(--space-3) var(--space-4);
+  color: var(--color-text);
+  text-decoration: none;
+  -webkit-touch-callout: none;
+  transition: background-color var(--duration-fast) ease;
+}
+
+.row:active {
+  background: var(--color-surface-pressed);
+}
+
+.rowMain {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.rowTitle {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  font-weight: var(--font-weight-medium);
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.rowAuthors {
+  overflow: hidden;
+  color: var(--color-text-tertiary);
+  font-size: var(--font-size-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rowMeta {
+  display: flex;
+  flex-wrap: wrap;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  line-height: 1.4;
+}
+
+.rowMeta > span + span::before {
+  content: '·';
+  margin: 0 6px;
+  color: var(--color-text-tertiary);
+}
+
+.rowStatus {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px var(--space-2);
+  margin-top: 2px;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 8px;
+  border-radius: var(--radius-full);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-bold);
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.badgeActive {
+  background: var(--color-info-soft);
+  color: var(--color-info);
+}
+
+.badgeRead {
+  background: var(--color-primary-soft);
+  color: var(--color-primary-text);
+}
+
+.badgePartial {
+  background: var(--color-warning-soft);
+  color: var(--color-warning);
+}
+
+.badgeUnread {
+  background: var(--color-surface-2);
+  color: var(--color-text-secondary);
+}
+
+.chevron {
+  flex-shrink: 0;
+  margin-right: calc(-1 * var(--space-1));
+  color: var(--color-text-tertiary);
+}
+
+/* ---- 絞り込みシート ---- */
+.sheetBody {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.sheetSection {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.sheetHeading {
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-bold);
+}
+
+.rangeFields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+  margin-top: var(--space-2);
+}
+
+.sheetFooter {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.sheetApply {
+  flex: 1;
+}

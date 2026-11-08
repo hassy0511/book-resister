@@ -1,0 +1,85 @@
+# main に入った変更を Firebase（Hosting と Firestore のルール・インデックス）へデプロイする
+#
+# 必要な設定（Settings > Secrets and variables > Actions）:
+#   Secrets:   FIREBASE_SERVICE_ACCOUNT（サービスアカウント鍵の JSON をそのまま）
+#   Variables: VITE_FIREBASE_API_KEY, VITE_FIREBASE_AUTH_DOMAIN, VITE_FIREBASE_PROJECT_ID,
+#              VITE_FIREBASE_APP_ID, VITE_FIREBASE_MESSAGING_SENDER_ID, VITE_VAPID_PUBLIC_KEY,
+#              VITE_GOOGLE_BOOKS_API_KEY（任意）
+# 手順は docs/setup.md を参照。
+name: デプロイ
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# デプロイは 1 つずつ順番に行う（途中で取り消さない）
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      VITE_FIREBASE_API_KEY: ${{ vars.VITE_FIREBASE_API_KEY }}
+      VITE_FIREBASE_AUTH_DOMAIN: ${{ vars.VITE_FIREBASE_AUTH_DOMAIN }}
+      VITE_FIREBASE_PROJECT_ID: ${{ vars.VITE_FIREBASE_PROJECT_ID }}
+      VITE_FIREBASE_APP_ID: ${{ vars.VITE_FIREBASE_APP_ID }}
+      VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ vars.VITE_FIREBASE_MESSAGING_SENDER_ID }}
+      VITE_VAPID_PUBLIC_KEY: ${{ vars.VITE_VAPID_PUBLIC_KEY }}
+      VITE_GOOGLE_BOOKS_API_KEY: ${{ vars.VITE_GOOGLE_BOOKS_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: 設定の確認
+        env:
+          HAS_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT != '' }}
+        run: |
+          missing=""
+          for name in VITE_FIREBASE_API_KEY VITE_FIREBASE_AUTH_DOMAIN VITE_FIREBASE_PROJECT_ID \
+                      VITE_FIREBASE_APP_ID VITE_FIREBASE_MESSAGING_SENDER_ID VITE_VAPID_PUBLIC_KEY; do
+            if [ -z "${!name}" ]; then missing="$missing $name"; fi
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::GitHub の Variables が未設定です:$missing（docs/setup.md の手順 7 を参照）"
+            exit 1
+          fi
+          if [ "$HAS_SERVICE_ACCOUNT" != "true" ]; then
+            echo "::error::GitHub の Secrets に FIREBASE_SERVICE_ACCOUNT が未設定です（docs/setup.md の手順 6・7 を参照）"
+            exit 1
+          fi
+
+      - name: 依存パッケージのインストール
+        run: npm ci --no-audit --no-fund
+
+      - name: ビルド
+        run: npm run build
+
+      - name: サービスアカウント鍵を一時ファイルに書き出す
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          key_file="$RUNNER_TEMP/firebase-service-account-${GITHUB_RUN_ID}.json"
+          umask 077
+          printf '%s' "$FIREBASE_SERVICE_ACCOUNT" > "$key_file"
+          echo "GOOGLE_APPLICATION_CREDENTIALS=$key_file" >> "$GITHUB_ENV"
+
+      - name: Firebase にデプロイ
+        run: npx firebase deploy --only hosting,firestore --project "$VITE_FIREBASE_PROJECT_ID" --non-interactive
+
+      - name: 鍵ファイルを削除
+        if: always()
+        run: |
+          if [ -n "${GOOGLE_APPLICATION_CREDENTIALS:-}" ]; then
+            rm -f "$GOOGLE_APPLICATION_CREDENTIALS"
+          fi

@@ -1,0 +1,25 @@
+{
+  "kind": "books#volumes",
+  "totalItems": 1,
+  "items": [
+    {
+      "kind": "books#volume",
+      "id": "zR0rAAAACAAJ",
+      "volumeInfo": {
+        "title": "かいけつゾロリのドラゴンたいじ",
+        "authors": ["原ゆたか"],
+        "publishedDate": "1987-11",
+        "industryIdentifiers": [
+          { "type": "ISBN_10", "identifier": "4591025098" },
+          { "type": "ISBN_13", "identifier": "9784591025093" }
+        ],
+        "printType": "BOOK",
+        "imageLinks": {
+          "smallThumbnail": "http://books.google.com/books/content?id=zR0rAAAACAAJ&printsec=frontcover&img=1&zoom=5&source=gbs_api",
+          "thumbnail": "http://books.google.com/books/content?id=zR0rAAAACAAJ&printsec=frontcover&img=1&zoom=1&source=gbs_api"
+        },
+        "language": "ja"
+      }
+    }
+  ]
+}

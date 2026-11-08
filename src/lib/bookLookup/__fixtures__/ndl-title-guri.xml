@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss xmlns:dcndl="http://ndl.go.jp/dcndl/terms/" xmlns:rdfs="http://www.w3.org/2000/01/rdf-schema#" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:openSearch="http://a9.com/-/spec/opensearchrss/1.0/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcmitype="http://purl.org/dc/dcmitype/" version="2.0">
+  <channel>
+    <title>ぐりとぐら - 国立国会図書館サーチ OpenSearch</title>
+    <link>https://ndlsearch.ndl.go.jp/api/opensearch?title=%E3%81%90%E3%82%8A%E3%81%A8%E3%81%90%E3%82%89&amp;cnt=20</link>
+    <description>Search results for title=ぐりとぐら Results 1 to 6 of 6</description>
+    <language>ja</language>
+    <openSearch:totalResults>6</openSearch:totalResults>
+    <openSearch:startIndex>1</openSearch:startIndex>
+    <openSearch:itemsPerPage>20</openSearch:itemsPerPage>
+    <item>
+      <title>ぐりとぐら</title>
+      <link>https://ndlsearch.ndl.go.jp/books/R100000002-I000001110001</link>
+      <author>なかがわりえこ さく,おおむらゆりこ え,</author>
+      <category>図書</category>
+      <category>児童書</category>
+      <dc:title>ぐりとぐら</dc:title>
+      <dcndl:titleTranscription>グリ ト グラ</dcndl:titleTranscription>
+      <dc:creator>なかがわりえこ さく</dc:creator>
+      <dc:creator>おおむらゆりこ え</dc:creator>
+      <dcndl:seriesTitle>こどものとも傑作集 ; 2</dcndl:seriesTitle>
+      <dc:publisher>福音館書店</dc:publisher>
+      <dcterms:issued xsi:type="dcterms:W3CDTF">1967</dcterms:issued>
+      <dc:identifier xsi:type="dcndl:ISBN">978-4-8340-0082-5</dc:identifier>
+    </item>
+    <item>
+      <title>ぐりとぐら</title>
+      <link>https://ndlsearch.ndl.go.jp/books/R100000001-I000000110002</link>
+      <category>図書</category>
+      <dc:title>ぐりとぐら</dc:title>
+      <dc:creator>中川, 李枝子, 1935-</dc:creator>
+      <dc:creator>大村, 百合子, 1941-</dc:creator>
+      <dc:publisher>福音館書店</dc:publisher>
+      <dc:identifier xsi:type="dcndl:ISBN">4834000826</dc:identifier>
+    </item>
+    <item>
+      <title>ぐりとぐらのおきゃくさま</title>
+      <link>https://ndlsearch.ndl.go.jp/books/R100000002-I000001110003</link>
+      <category>図書</category>
+      <dc:title>ぐりとぐらのおきゃくさま</dc:title>
+      <dc:creator>なかがわりえこ さく</dc:creator>
+      <dc:creator>やまわきゆりこ え</dc:creator>
+      <dcndl:seriesTitle>こどものとも傑作集 ; 47</dcndl:seriesTitle>
+      <dc:publisher>福音館書店</dc:publisher>
+      <dc:identifier xsi:type="dcndl:ISBN">978-4-8340-0160-0</dc:identifier>
+    </item>
+    <item>
+      <title>ぐりとぐら</title>
+      <link>https://ndlsearch.ndl.go.jp/books/R100000002-I000001110004</link>
+      <category>雑誌</category>
+      <dc:title>ぐりとぐら</dc:title>
+      <dc:publisher>福音館書店</dc:publisher>
+    </item>
+    <item>
+      <title>ぐりとぐら [こどものとも 1963年12月号]</title>
+      <link>https://ndlsearch.ndl.go.jp/books/R100000002-I000001110005</link>
+      <category>図書</category>
+      <dc:title>ぐりとぐら [こどものとも 1963年12月号]</dc:title>
+      <dc:creator>中川, 李枝子</dc:creator>
+      <dc:publisher>福音館書店</dc:publisher>
+    </item>
+    <item>
+      <title>「ぐりとぐら」の作者に聞く</title>
+      <link>https://ndlsearch.ndl.go.jp/books/R000000004-I000000110006</link>
+      <category>記事・論文</category>
+      <dc:title>「ぐりとぐら」の作者に聞く</dc:title>
+      <dc:creator>山田, 太郎</dc:creator>
+    </item>
+  </channel>
+</rss>

@@ -1,0 +1,57 @@
+# 返却日の通知（F-100〜F-104）
+# 毎朝、全グループの貸出中の本を調べて、延滞・明日返却・3日後に返却の本があれば Web Push を送る。
+#
+# 必要な設定（Settings > Secrets and variables > Actions）:
+#   Secrets:   FIREBASE_SERVICE_ACCOUNT（サービスアカウントの JSON をそのまま）, VAPID_PRIVATE_KEY
+#   Variables: VAPID_PUBLIC_KEY（アプリの VITE_VAPID_PUBLIC_KEY と同じ値）, VAPID_SUBJECT（mailto:〜 か https://〜）, APP_URL
+name: 返却日の通知
+
+on:
+  schedule:
+    # UTC 22:45 = 日本時間 7:45。実行の遅れを見込んで「8 時ごろ」に届く想定
+    - cron: '45 22 * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: '送信せずに内容だけ表示する'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+# 手動実行と定期実行が重なっても二重に送らない
+concurrency:
+  group: notify
+  cancel-in-progress: false
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: 依存パッケージのインストール
+        run: npm ci --no-audit --no-fund
+
+      - name: 通知を送信
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
+          VAPID_PUBLIC_KEY: ${{ vars.VAPID_PUBLIC_KEY }}
+          VAPID_SUBJECT: ${{ vars.VAPID_SUBJECT }}
+          APP_URL: ${{ vars.APP_URL }}
+          # 定期実行では inputs が空なので false になる
+          DRY_RUN: ${{ inputs.dry_run && 'true' || 'false' }}
+        run: |
+          if [ "$DRY_RUN" = "true" ]; then
+            npx tsx scripts/notify/index.ts --dry-run
+          else
+            npx tsx scripts/notify/index.ts
+          fi

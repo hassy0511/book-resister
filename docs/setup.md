@@ -1,0 +1,381 @@
+# 利用開始までの手順書
+
+このアプリ（かりた本ノート）を自分の家族用に動かすまでの手順です。上から順番に進めてください。
+**費用は一切かかりません。** クレジットカードの登録も不要です（Firebase は無料の Spark プランのまま使います）。
+
+所要時間の目安: 1〜2 時間（初めての場合）
+
+> 用意するもの
+>
+> - Google アカウント（Firebase を作る人のもの。家族のアカウントとは別でも同じでもよい）
+> - GitHub アカウントと、このアプリのリポジトリ（**非公開（Private）にしておく**。理由は手順 13 を参照）
+> - パソコン（手順 5 だけ。無い場合の代わりの方法も書いてあります）
+> - 家族の iPhone（iOS 16.4 以上）
+
+以下、`<project>` と書いてあるところは、自分の Firebase プロジェクト ID（例: `karita-hon-1a2b3`）に読み替えてください。
+
+---
+
+## 目次
+
+1. [Firebase プロジェクトを作る](#1-firebase-プロジェクトを作る)
+2. [ログイン方法（Authentication）を設定する](#2-ログイン方法authenticationを設定する)
+3. [データベース（Firestore）を作る](#3-データベースfirestoreを作る)
+4. [ウェブアプリを登録して設定値を控える](#4-ウェブアプリを登録して設定値を控える)
+5. [通知用の鍵（VAPID 鍵）を作る](#5-通知用の鍵vapid-鍵を作る)
+6. [デプロイ用のサービスアカウント鍵を作る](#6-デプロイ用のサービスアカウント鍵を作る)
+7. [GitHub に Secrets と Variables を登録する](#7-github-に-secrets-と-variables-を登録する)
+8. [main にマージしてデプロイする](#8-main-にマージしてデプロイする)
+9. [iPhone のホーム画面に追加して通知をオンにする](#9-iphone-のホーム画面に追加して通知をオンにする)
+10. [家族を招待する](#10-家族を招待する)
+11. [（任意）Google Books API キーを作る](#11-任意google-books-api-キーを作る)
+12. [通知の動作を確認する](#12-通知の動作を確認する)
+13. [無料枠の目安とトラブルシュート](#13-無料枠の目安とトラブルシュート)
+14. [（開発者向け）ローカルでの開発](#14-開発者向けローカルでの開発)
+
+---
+
+## 1. Firebase プロジェクトを作る
+
+1. パソコンかスマホのブラウザで <https://console.firebase.google.com/> を開き、Google アカウントでログインします。
+2. 「**プロジェクトを作成**」（または「Firebase プロジェクトを使ってみる」）を押します。
+3. プロジェクト名を入力します（例: `karita-hon`）。名前の下に表示される **プロジェクト ID**（例: `karita-hon-1a2b3`）を控えておきます。これが `<project>` です。
+   - アプリの URL は `https://<project>.web.app` になります。
+4. 「Google アナリティクス」は**オフ**で構いません（使いません）。
+5. 「プロジェクトを作成」を押し、完了するまで待ちます。
+
+> **料金プランは「Spark（無料）」のままにしてください。** 「Blaze にアップグレード」と表示されても押さないでください。このアプリは Spark プランだけで動くように作られています。
+
+## 2. ログイン方法（Authentication）を設定する
+
+1. 左のメニューの「**構築**」→「**Authentication**」を開き、「始める」を押します。
+2. 「**Sign-in method**（ログイン方法）」タブで、次の 2 つを有効にします。
+   - **Google**: 「Google」を選び、「有効にする」をオン。「プロジェクトのサポートメール」に自分のメールアドレスを選んで「保存」。
+   - **メール / パスワード**: 「メール / パスワード」を選び、1 つ目のスイッチ（メール / パスワード）だけをオンにして「保存」。
+     （2 つ目の「メールリンク（パスワードなしでログイン）」はオフのままで構いません）
+3. 「**設定**」タブ →「**承認済みドメイン**」を開き、次のドメインが入っていることを確認します（通常は最初から入っています）。
+   - `localhost`
+   - `<project>.firebaseapp.com`
+   - `<project>.web.app`
+
+   無ければ「ドメインの追加」で追加してください。
+
+## 3. データベース（Firestore）を作る
+
+1. 左のメニューの「**構築**」→「**Firestore Database**」を開き、「**データベースを作成**」を押します。
+2. エディションを聞かれたら「**Standard**」を選びます。
+3. ロケーション（データを置く場所）は **`asia-northeast1`（東京）** を選びます。
+   - **ロケーションは後から変更できません。** 間違えた場合はプロジェクトを作り直すことになります。
+4. セキュリティルールは「**本番環境モード**」を選んで「作成」を押します。
+   - 本番環境モードでは最初はすべてのアクセスが拒否されます。アプリ用のルール（`firestore.rules`）は、手順 8 のデプロイで自動的に設定されます。
+
+## 4. ウェブアプリを登録して設定値を控える
+
+1. 左上の歯車アイコン →「**プロジェクトの設定**」を開きます。
+2. 「全般」タブの下の方、「マイアプリ」で **`</>`（ウェブ）** のアイコンを押します。
+3. アプリのニックネーム（例: `かりた本ノート`）を入力します。
+   「このアプリの Firebase Hosting も設定します」には**チェックしなくて構いません**（GitHub Actions からデプロイするため）。
+4. 「アプリを登録」を押すと、次のような設定（`firebaseConfig`）が表示されます。値を控えておきます（後から「プロジェクトの設定」でいつでも見られます）。
+
+   ```js
+   const firebaseConfig = {
+     apiKey: "AIza....",               // → VITE_FIREBASE_API_KEY
+     authDomain: "<project>.firebaseapp.com",
+     projectId: "<project>",           // → VITE_FIREBASE_PROJECT_ID
+     storageBucket: "...",             // 使いません
+     messagingSenderId: "1234567890",  // → VITE_FIREBASE_MESSAGING_SENDER_ID
+     appId: "1:1234567890:web:abcd..." // → VITE_FIREBASE_APP_ID
+   };
+   ```
+
+5. **`authDomain` は表示された `<project>.firebaseapp.com` ではなく、`<project>.web.app` を使ってください。**（→ `VITE_FIREBASE_AUTH_DOMAIN`）
+
+   > **理由:** iPhone の Safari は、別のドメインのサイトがデータを保存することを制限しています（トラッキング防止）。ログイン処理を行うドメイン（authDomain）がアプリの URL（`<project>.web.app`）と違うと、ホーム画面に追加したアプリで Google ログインの後に画面が戻ってこない・ログイン状態が保存されない、といった問題が起きやすくなります。authDomain をアプリと同じドメインにすると、ログイン処理が「同じサイト内」の扱いになり安定します。
+
+6. authDomain を変えたので、Google ログインの「リダイレクト先」を 1 つ追加します。
+   1. <https://console.cloud.google.com/apis/credentials> を開き、画面上部のプロジェクト選択で自分のプロジェクト（`<project>`）を選びます。
+   2. 「OAuth 2.0 クライアント ID」の一覧にある「**Web client (auto created by Google Service)**」を開きます。
+   3. 「**承認済みのリダイレクト URI**」に「URI を追加」で次を追加して「保存」します。
+
+      ```
+      https://<project>.web.app/__/auth/handler
+      ```
+
+      （`https://<project>.firebaseapp.com/__/auth/handler` は最初から入っているはずです。消さずに残しておきます）
+   4. 反映まで数分〜数十分かかることがあります。
+
+## 5. 通知用の鍵（VAPID 鍵）を作る
+
+プッシュ通知を送るための鍵のペア（公開鍵と秘密鍵）を作ります。**一度作ったら変えない**でください（変えると全員が通知をオンにし直す必要があります）。
+
+### パソコンがある場合
+
+[Node.js](https://nodejs.org/ja)（LTS 版）をインストールし、リポジトリを取得したフォルダで次を実行します。
+
+```sh
+npm ci
+npm run gen:vapid
+```
+
+次のように表示されます。
+
+```
+=======================================
+Public Key:
+BNx....（長い文字列）
+Private Key:
+Q3y....（短めの文字列）
+=======================================
+```
+
+- **Public Key**（公開鍵）→ GitHub の Variables `VITE_VAPID_PUBLIC_KEY` と `VAPID_PUBLIC_KEY` の**両方**に同じ値を入れます。
+- **Private Key**（秘密鍵）→ GitHub の Secrets `VAPID_PRIVATE_KEY` に入れます。**他の人に見せたり、ファイルに保存してリポジトリに入れたりしないでください。**
+
+### パソコンが無い場合
+
+GitHub のリポジトリのページで「**Code**」→「**Codespaces**」→「**Create codespace on main**」を押すと、ブラウザ上で動く開発環境が開きます（個人アカウントには毎月の無料枠があります）。下のターミナルで上と同じ `npm ci` と `npm run gen:vapid` を実行してください。終わったら Codespace は削除して構いません（<https://github.com/codespaces> から削除できます）。
+
+## 6. デプロイ用のサービスアカウント鍵を作る
+
+GitHub Actions が Firebase にアプリを公開（デプロイ）したり、毎朝の通知のために Firestore を読んだりするための「ロボット用アカウント（サービスアカウント）」と、その鍵を作ります。
+
+### 6-1. サービスアカウントを作る
+
+1. <https://console.cloud.google.com/iam-admin/serviceaccounts> を開き、上部で自分のプロジェクトを選びます。
+2. 「**＋ サービス アカウントを作成**」を押します。
+3. 名前に `github-actions` と入力して「作成して続行」を押します。
+4. 「ロールを選択」で、次のロールを**すべて**追加します（「別のロールを追加」で 1 つずつ追加。検索欄にロール名の一部を入れると見つけやすいです）。
+
+   | 画面の表示名（日本語） | 英語名 | ロール ID | 何に使うか |
+   |---|---|---|---|
+   | Firebase Hosting 管理者 | Firebase Hosting Admin | `roles/firebasehosting.admin` | アプリの公開 |
+   | Firebase ルール管理者 | Firebase Rules Admin | `roles/firebaserules.admin` | セキュリティルールの反映 |
+   | Cloud Datastore インデックス管理者 | Cloud Datastore Index Admin | `roles/datastore.indexAdmin` | インデックス設定の反映 |
+   | Cloud Datastore ユーザー | Cloud Datastore User | `roles/datastore.user` | 毎朝の通知で貸出記録を読む・古い通知先を消す |
+   | Service Usage ユーザー | Service Usage Consumer | `roles/serviceusage.serviceUsageConsumer` | デプロイ前の API 有効化の確認 |
+
+   表示名は画面の言語やバージョンで少し違うことがあります。見つからないときは英語名で検索してください。
+
+5. 「完了」を押します。
+
+> **ロールの追加がうまくいかないときの確実な方法（Cloud Shell）**
+>
+> Google Cloud コンソール右上の「Cloud Shell をアクティブにする」（`>_` のアイコン）を押すと、ブラウザ内でコマンドを実行できます（無料）。次を貼り付けて実行すると、サービスアカウントの作成とロールの追加をまとめて行えます（1 行目の `<project>` は自分のプロジェクト ID に置き換えます）。
+>
+> ```sh
+> PROJECT_ID=<project>
+> SA="github-actions@${PROJECT_ID}.iam.gserviceaccount.com"
+> gcloud iam service-accounts create github-actions --display-name="GitHub Actions" --project="$PROJECT_ID"
+> for ROLE in roles/firebasehosting.admin roles/firebaserules.admin roles/datastore.indexAdmin \
+>             roles/datastore.user roles/serviceusage.serviceUsageConsumer; do
+>   gcloud projects add-iam-policy-binding "$PROJECT_ID" --member="serviceAccount:$SA" --role="$ROLE" --condition=None
+> done
+> ```
+>
+> （すでに作成済みのときは 3 行目がエラーになりますが、続けて実行して構いません）
+
+### 6-2. 鍵（JSON ファイル）を作る
+
+1. サービスアカウントの一覧で `github-actions@<project>.iam.gserviceaccount.com` を押します。
+2. 「**鍵**」タブ →「**鍵を追加**」→「**新しい鍵を作成**」→「**JSON**」→「作成」。
+3. JSON ファイルがダウンロードされます。これを次の手順で GitHub の Secrets `FIREBASE_SERVICE_ACCOUNT` に**ファイルの中身をそのまま全部**貼り付けます。
+
+> **この JSON ファイルはパスワードと同じです。** 誰にも渡さず、リポジトリにも入れないでください。GitHub に登録したら、パソコンからは削除して構いません（必要になったら同じ手順で新しい鍵を作れます）。
+> 鍵が漏れたかもしれないときは、「鍵」タブでその鍵を削除し、新しい鍵を作って登録し直してください。
+
+## 7. GitHub に Secrets と Variables を登録する
+
+GitHub のリポジトリのページで「**Settings**」→ 左メニューの「**Secrets and variables**」→「**Actions**」を開きます。
+
+### Secrets（秘密の値）
+
+「**Secrets**」タブ →「**New repository secret**」で 1 つずつ登録します。登録後は値を見ることはできません（上書きはできます）。
+
+| 名前 | 値 |
+|---|---|
+| `FIREBASE_SERVICE_ACCOUNT` | 手順 6 の JSON ファイルの中身すべて（`{` から `}` まで） |
+| `VAPID_PRIVATE_KEY` | 手順 5 の Private Key |
+
+### Variables（公開してよい値）
+
+「**Variables**」タブ →「**New repository variable**」で 1 つずつ登録します。
+
+| 名前 | 値 | 例 |
+|---|---|---|
+| `VITE_FIREBASE_API_KEY` | 手順 4 の `apiKey` | `AIza...` |
+| `VITE_FIREBASE_AUTH_DOMAIN` | **`<project>.web.app`**（手順 4 の 5 を参照） | `karita-hon-1a2b3.web.app` |
+| `VITE_FIREBASE_PROJECT_ID` | 手順 4 の `projectId` | `karita-hon-1a2b3` |
+| `VITE_FIREBASE_APP_ID` | 手順 4 の `appId` | `1:1234567890:web:abcd...` |
+| `VITE_FIREBASE_MESSAGING_SENDER_ID` | 手順 4 の `messagingSenderId` | `1234567890` |
+| `VITE_VAPID_PUBLIC_KEY` | 手順 5 の Public Key | `BNx...` |
+| `VAPID_PUBLIC_KEY` | 手順 5 の Public Key（上と同じ値） | `BNx...` |
+| `VAPID_SUBJECT` | 通知の送り主の連絡先。`mailto:` の後に自分のメールアドレス | `mailto:taro@example.com` |
+| `APP_URL` | アプリの URL | `https://karita-hon-1a2b3.web.app` |
+| `VITE_GOOGLE_BOOKS_API_KEY` | （任意）手順 11 で作る API キー。無ければ登録しなくてよい | `AIza...` |
+
+> Firebase の `apiKey` は秘密の値ではありません（アプリに埋め込まれて誰でも見られるもの）。データはセキュリティルールで守られています。
+
+## 8. main にマージしてデプロイする
+
+1. 変更を `main` ブランチにマージ（または push）すると、GitHub の「**Actions**」タブで「**デプロイ**」ワークフローが自動で動きます。
+   - 設定を登録した後に、何も変更せずにデプロイし直したいときは、「Actions」→ 左の一覧から「デプロイ」→「**Run workflow**」→「Run workflow」を押します。
+2. 緑のチェックマークが付けば完了です（2〜3 分）。赤い × が付いたときは、その実行を開き、赤くなっている手順のログを確認してください（よくある原因は手順 13 のトラブルシュートを参照）。
+3. ブラウザで `https://<project>.web.app` を開き、ログイン画面が出れば成功です。
+
+> 同時に「CI」ワークフローも動き、型チェック・テスト・ルールのテストが行われます。CI が失敗していてもデプロイは行われますが、失敗の内容は確認してください。
+
+## 9. iPhone のホーム画面に追加して通知をオンにする
+
+通知（返却日のお知らせ）を受け取るには、**ホーム画面に追加したアプリ**から通知を許可する必要があります（iPhone の仕様です。iOS 16.4 以上が必要）。家族それぞれの iPhone で行ってください。
+
+1. iPhone の **Safari** で `https://<project>.web.app` を開きます（Chrome など他のブラウザではなく Safari で）。
+2. 画面下の **共有ボタン**（四角から上向き矢印が出ているアイコン）を押します。
+3. 一覧を下にスクロールして「**ホーム画面に追加**」を押し、右上の「追加」を押します。
+4. **ホーム画面に追加された「かりた本」アイコンから**アプリを開きます（以降は毎回ここから開きます）。
+5. Google またはメールアドレスでログインします。
+6. 最初の 1 人目は、グループの作成画面で表示名（例: ママ）とグループ名（例: 山田家）を入力します。続けて、よく使う場所（図書館など）と貸出期間を登録します。
+7. 画面下の「**設定**」タブ →「**返却日の通知**」を開き、「**通知をオンにする**」を押します。iPhone の確認画面が出たら「**許可**」を押します。
+8. 同じ画面の「**テスト通知を送る**」を押し、通知が表示されることを確認します。
+
+> 通知を一度「許可しない」にしてしまった場合は、iPhone の「設定」→「通知」→「かりた本」から通知をオンにしてください。
+
+## 10. 家族を招待する
+
+1. 画面下の「**設定**」タブ →「**家族メンバーと招待**」で「**招待リンクを作る**」を押し、LINE やメッセージで家族に送ります（共有シートが出ないときは「共有する」か「コピーする」を押します）。
+   - 招待リンクの有効期限は **7 日間** です。期限が切れたら新しいリンクを作ってください。
+2. 受け取った家族は、iPhone の **Safari** でリンクを開き、ログイン（Google かメールアドレス）して、画面の案内に従ってグループに参加します。
+   - Google アカウントを持っていない家族は、メールアドレスとパスワードで新規登録できます。
+3. 参加したら、手順 9 の 2〜4 と 7〜8（ホーム画面に追加して通知をオン）を行ってもらいます。
+
+## 11. （任意）Google Books API キーを作る
+
+本の情報（タイトル・表紙など）は、まず openBD と国立国会図書館サーチから探し、見つからないときに Google Books を使います。Google Books は API キーが無くても使えますが、利用者全体で共有の上限に当たりやすいため、キーを作っておくと安定します。**無料**です（請求先アカウントの登録も不要です）。
+
+1. <https://console.cloud.google.com/apis/library/books.googleapis.com> を開き、上部で自分のプロジェクトを選んで「**有効にする**」を押します。
+2. <https://console.cloud.google.com/apis/credentials> で「**＋ 認証情報を作成**」→「**API キー**」を押します。作成されたキーを控えます。
+3. 作成したキーを開き（「キーを編集」）、次のように**制限**をかけて保存します（他の人に勝手に使われないようにするため）。
+   - **アプリケーションの制限**: 「**ウェブサイト**（HTTP リファラー）」を選び、次を追加します。
+     - `https://<project>.web.app/*`
+     - `https://<project>.firebaseapp.com/*`
+     - （ローカル開発もする場合）`http://localhost:5173/*`
+   - **API の制限**: 「キーを制限」を選び、「**Books API**」だけにチェック。
+4. GitHub の Variables に `VITE_GOOGLE_BOOKS_API_KEY` として登録し、手順 8 の方法でデプロイし直します。
+
+## 12. 通知の動作を確認する
+
+通知は GitHub Actions の「**返却日の通知**」ワークフローが毎朝 8 時ごろ（日本時間 7:45 に起動）に送ります。次の本があるときだけ、グループ全員に 1 通届きます。
+
+- 返却日を過ぎている本（返却するまで毎朝）
+- 明日が返却日の本
+- 3 日後が返却日の本
+
+### 送らずに内容だけ確認する（dry run）
+
+1. GitHub の「**Actions**」→ 左の一覧から「**返却日の通知**」を選びます。
+2. 「**Run workflow**」を押し、「**送信せずに内容だけ表示する**」に**チェックを入れて**「Run workflow」を押します。
+3. 実行が終わったら開いて、「通知を送信」のログに、送る予定の内容と件数が表示されていることを確認します。
+
+### 実際に送ってみる
+
+1. アプリで、返却日を「明日」にした本を 1 冊登録します（テスト用。後で削除します）。
+2. 上と同じ手順で、今度は**チェックを入れずに**「Run workflow」を押します。
+3. 通知をオンにした iPhone に「明日返却：…」という通知が届けば成功です。
+4. テスト用に登録した本は、本の詳細画面などから削除してください。
+
+> GitHub の定期実行は混雑していると数分〜数十分遅れることがあります。8 時ちょうどに届かなくても異常ではありません。
+
+## 13. 無料枠の目安とトラブルシュート
+
+### 無料枠の目安
+
+家族 6 人程度・年間 1,000 件程度の貸出なら、どれも無料枠に十分収まります。
+
+| サービス | 無料枠（主なもの） | このアプリでの使い方の目安 |
+|---|---|---|
+| Cloud Firestore（Spark） | 保存 1 GiB、読み取り 5 万回／日、書き込み 2 万回／日、削除 2 万回／日 | 1 日数百〜数千回の読み取り。履歴画面は記録が増えると読み取りが増えるが、家族規模なら上限に届かない |
+| Firebase Hosting（Spark） | 保存 10 GB、転送 360 MB／日 | アプリ本体は数 MB。2 回目以降はキャッシュから読むのでほとんど使わない |
+| Firebase Authentication | Google・メールのログインは無料 | 家族の人数分 |
+| GitHub Actions（非公開リポジトリ） | 月 2,000 分 | 通知は 1 日 1 回・1 分程度（月 30 分ほど）。デプロイと CI は 1 回数分 |
+
+- 上限を超えても**勝手に課金されることはありません**（Spark プランでは、その日の残りの操作が止まるだけです）。
+- Firebase コンソールの「**使用量と請求額**」で使用量を確認できます。
+
+### リポジトリは非公開にしておく
+
+公開（Public）リポジトリでは、**60 日間リポジトリに変更が無いと定期実行（毎朝の通知）が自動で止まります。** 非公開（Private）にしておけば止まりません。リポジトリの「Settings」→「General」の一番下（Danger Zone）の「Change repository visibility」で変更できます。
+
+止まってしまった場合は、「Actions」→「返却日の通知」を開き、表示される「Enable workflow」を押すと再開します。
+
+### よくあるトラブル
+
+**デプロイ（Actions の「デプロイ」）が失敗する**
+
+- 「GitHub の Variables が未設定です」→ 手順 7 の Variables を確認します（名前のつづり間違いに注意）。
+- 「FIREBASE_SERVICE_ACCOUNT が未設定です」→ 手順 7 の Secrets を確認します。
+- `HTTP Error: 403` / `Permission denied` / `PERMISSION_DENIED` → 手順 6 のロールが足りません。5 つすべて付いているか確認します（付けてから反映まで数分かかることがあります）。
+- `Failed to get Firebase project` / `Invalid project id` → `VITE_FIREBASE_PROJECT_ID` がプロジェクト ID（表示名ではなく ID）になっているか確認します。
+- `Cloud Firestore API has not been used` / データベースが無い → 手順 3 で Firestore を作成したか確認します。
+
+**ログインできない**
+
+- ホーム画面のアプリで Google ログイン後に画面が戻ってこない → `VITE_FIREBASE_AUTH_DOMAIN` が `<project>.web.app` になっているか、手順 4 の 6（リダイレクト URI の追加）を行ったか確認します。変更したらデプロイし直します。
+- `auth/unauthorized-domain` → 手順 2 の 3（承認済みドメイン）を確認します。
+- `redirect_uri_mismatch`（Google の画面のエラー）→ 手順 4 の 6 を確認します。追加した直後は反映まで時間がかかることがあります。
+- メールアドレスで登録したパスワードを忘れた → ログイン画面のパスワード再設定から、再設定用のメールを送れます。メールが届かないときは迷惑メールフォルダを確認してください。
+
+**「権限がありません」と表示される**
+
+- Firebase コンソールの「Firestore Database」→「ルール」タブに、このリポジトリの `firestore.rules` と同じ内容が入っているか確認します（入っていなければデプロイが失敗しています）。
+- 招待リンクで参加した直後なら、アプリを一度閉じて開き直します。
+
+**通知が届かない**
+
+- iPhone が iOS 16.4 以上か確認します（「設定」→「一般」→「情報」）。
+- **ホーム画面のアイコンから開いたアプリ**で通知をオンにしたか確認します（Safari のタブで開いた画面からは通知を受け取れません）。
+- iPhone の「設定」→「通知」→「かりた本」で通知が許可されているか、集中モード（おやすみモードなど）になっていないか確認します。
+- 「Actions」→「返却日の通知」が毎朝動いているか確認します。dry run で対象の本が表示されるかも確認します。
+- `VITE_VAPID_PUBLIC_KEY` と `VAPID_PUBLIC_KEY` が同じ値で、`VAPID_PRIVATE_KEY` と同じとき（手順 5）に作ったペアか確認します。鍵を作り直した場合は、全員がアプリの「設定」タブ →「返却日の通知」で一度オフにしてからオンにし直します。
+- `VAPID_SUBJECT` が `mailto:` から始まっているか確認します（Apple の通知サーバーはこれが無いと拒否します）。
+- アプリを削除してホーム画面に追加し直した場合は、通知もオンにし直します。
+
+**バーコードが読み取れない・カメラが起動しない**
+
+- 初回にカメラの使用を聞かれたら「許可」を押します。拒否してしまった場合は、iPhone の「設定」→「アプリ」→「Safari」→「カメラ」を「確認」か「許可」にします。
+- 明るい場所で、バーコードを画面の枠いっぱいに映します。読み取れないときは ISBN を手で入力するか、タイトルで検索してください。
+
+**本の情報（タイトル・表紙）が出ない**
+
+- 書誌情報のサービスが一時的に使えないことがあります。時間をおくか、タイトル検索・手入力で登録してください。
+- Google Books の上限に当たっている可能性があります。手順 11 の API キーを設定すると改善します。
+
+**アプリの更新が反映されない**
+
+- アプリを完全に閉じて（ホーム画面でスワイプして終了）、開き直します。新しい版は次に開いたときに反映されます。
+
+---
+
+## 14. （開発者向け）ローカルでの開発
+
+必要なもの: Node.js 22、Java 21 以上（Firebase エミュレータ用）。
+
+```sh
+npm ci
+cp .env.example .env.local   # VITE_USE_EMULATORS=true にする（実プロジェクトの値は空のままでよい）
+npm run emulators            # 別のターミナルで。Auth: 9099 / Firestore: 8080（データは終了時に消える）
+npm run dev                  # http://localhost:5173
+```
+
+- 実際の Firebase プロジェクトにつなぐ場合は、`.env.local` に `VITE_FIREBASE_*` を設定し、`VITE_USE_EMULATORS=false` にします（実データが変更されるので注意）。
+- iPhone 実機で試す場合、カメラと Service Worker は HTTPS（または localhost）でしか動かないため、デプロイした環境で確認するのが簡単です。
+
+| コマンド | 内容 |
+|---|---|
+| `npm run dev` | 開発サーバー |
+| `npm run typecheck` | 型チェック |
+| `npm test` | 単体テスト（Vitest） |
+| `npm run test:rules` | Firestore セキュリティルールのテスト（エミュレータを自動で起動） |
+| `npm run build` | 本番用ビルド（`dist/`） |
+| `npm run emulators` | Firebase エミュレータ（Auth・Firestore・Hosting） |
+| `npm run gen:vapid` | 通知用の VAPID 鍵を作る |
+| `npx tsx scripts/notify/index.ts --dry-run` | 通知の内容を確認（`FIREBASE_SERVICE_ACCOUNT` などの環境変数が必要） |
+| `node scripts/generate-icons.mjs` | アイコン（`public/icons/`）を作り直す（Playwright が必要） |

@@ -1,0 +1,69 @@
+.tabBar {
+  flex-shrink: 0;
+  position: relative;
+  z-index: var(--z-tabbar);
+  padding-bottom: var(--safe-bottom);
+  padding-left: var(--safe-left);
+  padding-right: var(--safe-right);
+  background: var(--color-surface);
+  border-top: 1px solid var(--color-separator);
+}
+
+@supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  .tabBar {
+    background: color-mix(in srgb, var(--color-surface) 88%, transparent);
+    -webkit-backdrop-filter: saturate(180%) blur(16px);
+    backdrop-filter: saturate(180%) blur(16px);
+  }
+}
+
+.list {
+  display: flex;
+  height: var(--tabbar-height);
+}
+
+.item {
+  flex: 1;
+  min-width: 0;
+}
+
+.tab {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  width: 100%;
+  height: 100%;
+  min-height: var(--tap-size);
+  color: var(--color-text-tertiary);
+  text-decoration: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  transition: color var(--duration-fast) ease;
+}
+
+.tab:active {
+  opacity: 0.7;
+}
+
+.tab:focus-visible {
+  outline-offset: -3px;
+  border-radius: var(--radius-md);
+}
+
+.label {
+  font-size: 11px;
+  line-height: 1.2;
+  font-weight: var(--font-weight-medium);
+  white-space: nowrap;
+}
+
+.active {
+  color: var(--color-primary-text);
+}
+
+.active .label {
+  font-weight: var(--font-weight-bold);
+}

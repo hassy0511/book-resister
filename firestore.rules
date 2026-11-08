@@ -1,0 +1,334 @@
+rules_version = '2';
+
+// 本の貸出管理アプリの Firestore セキュリティルール。
+// データ構造は src/types.ts、方針は docs/design.md の 3 章が正。型を変えたらここも合わせて直すこと。
+// テスト: npm run test:rules（tests/rules/*.test.ts）
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ------------------------------------------------------------------
+    // 共通ヘルパ
+    // ------------------------------------------------------------------
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isSelf(userId) {
+      return signedIn() && request.auth.uid == userId;
+    }
+
+    function memberPath(gid, userId) {
+      return /databases/$(database)/documents/groups/$(gid)/members/$(userId);
+    }
+
+    // グループのメンバーか（members/{自分の uid} が存在するか）
+    function isMember(gid) {
+      return signedIn() && exists(memberPath(gid, request.auth.uid));
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // 指定したキーをちょうど持つ（不足も余計なフィールドも不可）
+    function hasExactly(d, keys) {
+      return d.keys().hasAll(keys) && d.keys().hasOnly(keys);
+    }
+
+    // max 文字以内の文字列。前後の空白を除いて min 文字以上
+    function isText(v, min, max) {
+      return v is string && v.size() <= max && v.trim().size() >= min;
+    }
+
+    // パスに埋め込んでも安全なドキュメント ID
+    function isDocId(v) {
+      return v is string && v.matches('^[^/]{1,128}$');
+    }
+
+    // 'YYYY-MM-DD'
+    function isDate(v) {
+      return v is string && v.matches('^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$');
+    }
+
+    function isIsbn13(v) {
+      return v is string && v.matches('^97[89][0-9]{10}$');
+    }
+
+    function isUrl(v) {
+      return v is string && v.size() <= 2048 && v.matches('^https?://.+');
+    }
+
+    function isIntBetween(v, min, max) {
+      return v is int && v >= min && v <= max;
+    }
+
+    // リストの i 番目が（あれば）1〜200 文字の文字列
+    function strAt(v, i) {
+      return v.size() <= i || isText(v[i], 1, 200);
+    }
+
+    // 文字列のリスト（空文字なし、最大 maxItems 件、連結して maxTotal 文字以内）。
+    // ルールにはループが無いため、要素の型は先頭 10 件だけ個別に確認する
+    function isStrList(v, maxItems, maxTotal) {
+      return v is list
+        && v.size() <= maxItems
+        && (v.size() == 0 || (!v.hasAny(['']) && v.join('\n').size() <= maxTotal))
+        && strAt(v, 0) && strAt(v, 1) && strAt(v, 2) && strAt(v, 3) && strAt(v, 4)
+        && strAt(v, 5) && strAt(v, 6) && strAt(v, 7) && strAt(v, 8) && strAt(v, 9);
+    }
+
+    // 作成時: createdAt / updatedAt は serverTimestamp()
+    function createdNow() {
+      return incoming().createdAt == request.time && incoming().updatedAt == request.time;
+    }
+
+    // 更新時: createdAt は変更不可、updatedAt は serverTimestamp()
+    function updatedNow() {
+      return incoming().createdAt == existing().createdAt && incoming().updatedAt == request.time;
+    }
+
+    function isInviteCode(v) {
+      return v is string && v.matches('^[A-Za-z0-9_-]{16,64}$');
+    }
+
+    // ------------------------------------------------------------------
+    // users/{uid} — 本人だけが読み書きする
+    // ------------------------------------------------------------------
+    match /users/{userId} {
+      function userFields(d) {
+        return hasExactly(d, ['displayName', 'groupId', 'createdAt', 'updatedAt'])
+          && isText(d.displayName, 1, 50);
+      }
+
+      // groupId は null か、（この書き込みの適用後に）自分がメンバーであるグループだけ
+      function groupIdAllowed(gid) {
+        return gid == null || (isDocId(gid) && existsAfter(memberPath(gid, userId)));
+      }
+
+      allow read: if isSelf(userId);
+      allow create: if isSelf(userId)
+        && userFields(incoming())
+        && createdNow()
+        && groupIdAllowed(incoming().groupId);
+      allow update: if isSelf(userId)
+        && userFields(incoming())
+        && updatedNow()
+        && (incoming().groupId == existing().groupId || groupIdAllowed(incoming().groupId));
+      allow delete: if false;
+    }
+
+    // ------------------------------------------------------------------
+    // invites/{code} — ログイン済みならコード指定で get できる（list は不可）
+    // ------------------------------------------------------------------
+    match /invites/{code} {
+      function inviteFields(d) {
+        return hasExactly(d, ['groupId', 'groupName', 'createdBy', 'createdAt', 'expiresAt'])
+          && isDocId(d.groupId)
+          && isText(d.groupName, 1, 50)
+          && d.createdBy == request.auth.uid
+          && d.createdAt == request.time
+          && d.expiresAt is timestamp
+          && d.expiresAt > request.time
+          // 有効期限は 7 日。端末の時計のずれを見込んで 8 日まで許す
+          && d.expiresAt <= request.time + duration.value(8, 'd');
+      }
+
+      allow get: if signedIn();
+      allow list: if false;
+      allow create: if signedIn()
+        && isInviteCode(code)
+        && inviteFields(incoming())
+        && isMember(incoming().groupId);
+      allow update: if false;
+      allow delete: if signedIn() && isMember(existing().groupId);
+    }
+
+    // ------------------------------------------------------------------
+    // groups/{gid} とその配下
+    // ------------------------------------------------------------------
+    match /groups/{gid} {
+      allow read: if isMember(gid);
+      // グループ作成は「group + 自分の members + users」を 1 バッチで書く
+      allow create: if signedIn()
+        && hasExactly(incoming(), ['name', 'createdBy', 'createdAt'])
+        && isText(incoming().name, 1, 50)
+        && incoming().createdBy == request.auth.uid
+        && incoming().createdAt == request.time
+        && existsAfter(memberPath(gid, request.auth.uid));
+      allow update: if isMember(gid)
+        && incoming().diff(existing()).affectedKeys().hasOnly(['name'])
+        && isText(incoming().name, 1, 50);
+      allow delete: if false;
+
+      // ---- members/{uid} ----
+      match /members/{memberUid} {
+        function memberFields(d) {
+          return hasExactly(d, ['displayName', 'joinedAt', 'inviteCode'])
+            && isText(d.displayName, 1, 50)
+            && d.joinedAt == request.time;
+        }
+
+        // グループ作成者として参加（同じバッチで作られたグループの createdBy が自分）
+        function joinsAsCreator() {
+          return incoming().inviteCode == null
+            && getAfter(/databases/$(database)/documents/groups/$(gid)).data.createdBy == request.auth.uid;
+        }
+
+        function inviteValidForGroup(code) {
+          let invite = get(/databases/$(database)/documents/invites/$(code)).data;
+          return invite.groupId == gid && invite.expiresAt > request.time;
+        }
+
+        // 有効期限内の、このグループの招待コードを持っている
+        function joinsWithInvite() {
+          return isInviteCode(incoming().inviteCode)
+            && exists(/databases/$(database)/documents/invites/$(incoming().inviteCode))
+            && inviteValidForGroup(incoming().inviteCode);
+        }
+
+        // 参加直前に本人が自分のメンバー情報を確認できるよう、本人の get は許可する
+        allow get: if isSelf(memberUid);
+        allow read: if isMember(gid);
+        allow create: if isSelf(memberUid)
+          && memberFields(incoming())
+          && (joinsAsCreator() || joinsWithInvite());
+        // 本人が表示名だけを変える。または、参加し直す（作成と同じ条件。joinGroup の setDoc が上書きになる場合）
+        allow update: if isSelf(memberUid)
+          && (
+            (incoming().diff(existing()).affectedKeys().hasOnly(['displayName'])
+              && isText(incoming().displayName, 1, 50))
+            || (memberFields(incoming()) && (joinsAsCreator() || joinsWithInvite()))
+          );
+        allow delete: if isSelf(memberUid);
+      }
+
+      // ---- locations/{id} ----
+      match /locations/{locationId} {
+        function locationFields(d) {
+          return hasExactly(d, ['name', 'defaultLoanDays', 'memo', 'archived', 'createdAt', 'updatedAt'])
+            && isText(d.name, 1, 100)
+            && isIntBetween(d.defaultLoanDays, 1, 365)
+            && d.memo is string && d.memo.size() <= 1000
+            && d.archived is bool;
+        }
+
+        allow read, delete: if isMember(gid);
+        allow create: if isMember(gid) && locationFields(incoming()) && createdNow();
+        allow update: if isMember(gid) && locationFields(incoming()) && updatedNow();
+      }
+
+      // ---- books/{id}（ISBN がある本の ID は isbn-<ISBN13>） ----
+      match /books/{bookId} {
+        function bookFields(d) {
+          return hasExactly(d, ['isbn', 'title', 'authors', 'publisher', 'coverUrl', 'seriesId', 'volume', 'source', 'createdAt', 'updatedAt'])
+            && (d.isbn == null || isIsbn13(d.isbn))
+            && isText(d.title, 1, 300)
+            && isStrList(d.authors, 50, 2000)
+            && (d.publisher == null || isText(d.publisher, 1, 200))
+            && (d.coverUrl == null || isUrl(d.coverUrl))
+            && (d.seriesId == null || isDocId(d.seriesId))
+            && (d.volume == null || isIntBetween(d.volume, 0, 99999))
+            && d.source in ['openbd', 'ndl', 'google', 'manual'];
+        }
+
+        allow read, delete: if isMember(gid);
+        allow create: if isMember(gid)
+          && bookFields(incoming())
+          && createdNow()
+          && (incoming().isbn == null || bookId == 'isbn-' + incoming().isbn);
+        allow update: if isMember(gid)
+          && bookFields(incoming())
+          && updatedNow()
+          && incoming().isbn == existing().isbn;
+      }
+
+      // ---- series/{id} ----
+      match /series/{seriesId} {
+        function seriesFields(d) {
+          return hasExactly(d, ['name', 'totalVolumes', 'createdAt', 'updatedAt'])
+            && isText(d.name, 1, 200)
+            && (d.totalVolumes == null || isIntBetween(d.totalVolumes, 1, 9999));
+        }
+
+        allow read, delete: if isMember(gid);
+        allow create: if isMember(gid) && seriesFields(incoming()) && createdNow();
+        allow update: if isMember(gid) && seriesFields(incoming()) && updatedNow();
+      }
+
+      // ---- loans/{id}（貸出中は returnedOn == null） ----
+      match /loans/{loanId} {
+        function snapshotFields(b) {
+          return b is map
+            && hasExactly(b, ['title', 'authors', 'coverUrl', 'isbn'])
+            && isText(b.title, 1, 300)
+            && isStrList(b.authors, 50, 2000)
+            && (b.coverUrl == null || isUrl(b.coverUrl))
+            && (b.isbn == null || isIsbn13(b.isbn));
+        }
+
+        function loanFields(d) {
+          return hasExactly(d, ['bookId', 'book', 'locationId', 'borrowerUid', 'borrowedOn', 'dueOn', 'returnedOn', 'readStatus', 'rating', 'review', 'createdBy', 'createdAt', 'updatedAt'])
+            && isDocId(d.bookId)
+            && snapshotFields(d.book)
+            && isDocId(d.locationId)
+            && isDocId(d.borrowerUid)
+            && isDate(d.borrowedOn)
+            && isDate(d.dueOn)
+            && (d.returnedOn == null || isDate(d.returnedOn))
+            && (d.readStatus == null || d.readStatus in ['read', 'partial', 'unread'])
+            && (d.rating == null || isIntBetween(d.rating, 1, 5))
+            && (d.review == null || (d.review is string && d.review.size() <= 2000))
+            && isDocId(d.createdBy);
+        }
+
+        allow read, delete: if isMember(gid);
+        allow create: if isMember(gid)
+          && loanFields(incoming())
+          && createdNow()
+          && incoming().createdBy == request.auth.uid;
+        allow update: if isMember(gid)
+          && loanFields(incoming())
+          && updatedNow()
+          && incoming().createdBy == existing().createdBy
+          && incoming().bookId == existing().bookId;
+      }
+
+      // ---- pushSubscriptions/{id}（ID は endpoint の SHA-256）— 本人のものだけ ----
+      match /pushSubscriptions/{subscriptionId} {
+        function pushFields(d) {
+          return hasExactly(d, ['uid', 'endpoint', 'keys', 'userAgent', 'createdAt'])
+            && d.uid == request.auth.uid
+            && d.endpoint is string && d.endpoint.size() <= 2048 && d.endpoint.matches('^https://.+')
+            && d['keys'] is map
+            && hasExactly(d['keys'], ['p256dh', 'auth'])
+            && isText(d['keys'].p256dh, 1, 512)
+            && isText(d['keys'].auth, 1, 512)
+            && d.userAgent is string && d.userAgent.size() <= 1000;
+        }
+
+        // 自分のもの。存在しない ID の get / delete はメンバーなら許可（購読状態の確認・二重解除用）
+        function ownOrMissing() {
+          return (resource == null && isMember(gid))
+            || (resource != null && existing().uid == request.auth.uid);
+        }
+
+        allow get: if signedIn() && ownOrMissing();
+        // 一覧は where('uid', '==', 自分の uid) を付けたクエリのみ
+        allow list: if signedIn() && existing().uid == request.auth.uid;
+        allow create: if isMember(gid)
+          && pushFields(incoming())
+          && incoming().createdAt == request.time;
+        // 同じ端末で購読し直したとき（setDoc の上書き）用。createdAt は据え置きか今の時刻
+        allow update: if isMember(gid)
+          && pushFields(incoming())
+          && (incoming().createdAt == existing().createdAt || incoming().createdAt == request.time);
+        allow delete: if signedIn() && ownOrMissing();
+      }
+    }
+  }
+}

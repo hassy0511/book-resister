@@ -1,0 +1,79 @@
+.iconButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: var(--tap-size);
+  height: var(--tap-size);
+  border-radius: var(--radius-full);
+  color: var(--color-primary-text);
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  transition:
+    background-color var(--duration-fast) ease,
+    transform var(--duration-fast) ease;
+}
+
+.iconButton:active:not(:disabled) {
+  transform: scale(0.94);
+}
+
+.iconButton:disabled {
+  opacity: 0.4;
+}
+
+.iconButton > svg {
+  width: 24px;
+  height: 24px;
+}
+
+.plain {
+  background: transparent;
+}
+
+.plain:active:not(:disabled) {
+  background: var(--color-surface-pressed);
+}
+
+.filled {
+  background: var(--color-surface-2);
+}
+
+.filled:active:not(:disabled) {
+  background: var(--color-surface-pressed);
+}
+
+.primary {
+  background: var(--color-primary);
+  color: var(--color-primary-contrast);
+}
+
+.primary:active:not(:disabled) {
+  background: var(--color-primary-pressed);
+}
+
+.danger {
+  background: transparent;
+  color: var(--color-danger);
+}
+
+.danger:active:not(:disabled) {
+  background: var(--color-danger-soft);
+}
+
+.md {
+  width: var(--tap-size);
+  height: var(--tap-size);
+}
+
+.lg {
+  width: 56px;
+  height: 56px;
+}
+
+.lg > svg {
+  width: 28px;
+  height: 28px;
+}

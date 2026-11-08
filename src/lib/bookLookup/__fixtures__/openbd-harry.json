@@ -1,0 +1,34 @@
+[
+  {
+    "onix": {
+      "RecordReference": "9784915512599",
+      "NotificationType": "03",
+      "ProductIdentifier": { "ProductIDType": "15", "IDValue": "9784915512599" },
+      "DescriptiveDetail": {
+        "ProductComposition": "00",
+        "ProductForm": "BA",
+        "TitleDetail": {
+          "TitleType": "01",
+          "TitleElement": {
+            "TitleElementLevel": "01",
+            "TitleText": { "collationkey": "ハリー ポッター ト ホノオ ノ ゴブレット", "content": "ハリー・ポッターと炎のゴブレット" }
+          }
+        }
+      },
+      "PublishingDetail": {
+        "PublishingDate": [{ "PublishingDateRole": "01", "Date": "200210" }]
+      }
+    },
+    "hanmoto": {},
+    "summary": {
+      "isbn": "9784915512599",
+      "title": "ハリー・ポッターと炎のゴブレット",
+      "volume": "上",
+      "series": "",
+      "publisher": "静山社",
+      "pubdate": "2002-10",
+      "cover": "http://cover.openbd.jp/9784915512599.jpg",
+      "author": "J.K.ローリング／作 松岡佑子／訳"
+    }
+  }
+]

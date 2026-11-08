@@ -1,8 +1,30 @@
+import { readFileSync } from 'node:fs';
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 
+/** 設定画面に表示するバージョン（package.json の version） */
+const appVersion = (JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')) as { version: string }).version;
+
 export default defineConfig({
+  define: {
+    'import.meta.env.VITE_APP_VERSION': JSON.stringify(appVersion),
+  },
+  build: {
+    // Firebase SDK（Auth + Firestore）だけで 500 kB を超えるため、警告の基準を少し上げる
+    chunkSizeWarningLimit: 800,
+    rolldownOptions: {
+      output: {
+        // ライブラリを名前の付いたチャンクに分ける（アプリの更新時にライブラリ部分のキャッシュを使い回せる）
+        codeSplitting: {
+          groups: [
+            { name: 'firebase', test: /node_modules[\\/](@firebase|firebase)[\\/]/ },
+            { name: 'react', test: /node_modules[\\/](react|react-dom|react-router|react-router-dom|scheduler)[\\/]/ },
+          ],
+        },
+      },
+    },
+  },
   plugins: [
     react(),
     VitePWA({

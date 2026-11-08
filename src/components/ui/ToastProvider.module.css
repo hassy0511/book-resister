@@ -1,0 +1,108 @@
+.region {
+  position: fixed;
+  left: calc(var(--space-3) + var(--safe-left));
+  right: calc(var(--space-3) + var(--safe-right));
+  bottom: calc(var(--tabbar-offset) + var(--space-3));
+  z-index: var(--z-toast);
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.toast {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  max-width: 560px;
+  min-height: 52px;
+  padding: var(--space-1) var(--space-1) var(--space-1) var(--space-4);
+  border-radius: var(--radius-lg);
+  background: var(--color-toast-bg);
+  color: var(--color-toast-text);
+  box-shadow: var(--shadow-lg);
+  pointer-events: auto;
+  animation: toastIn var(--duration-normal) var(--ease-out) both;
+}
+
+.leaving {
+  pointer-events: none;
+  animation: toastOut 180ms ease-in both;
+}
+
+@keyframes toastIn {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+}
+
+@keyframes toastOut {
+  to {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+}
+
+.icon {
+  flex-shrink: 0;
+}
+
+.success .icon {
+  color: var(--color-toast-action);
+}
+
+.error .icon {
+  color: #ff8a80;
+}
+
+.message {
+  flex: 1;
+  min-width: 0;
+  padding: var(--space-2) 0;
+  font-size: var(--font-size-sm);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.action {
+  flex-shrink: 0;
+  min-height: var(--tap-size);
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-md);
+  color: var(--color-toast-action);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-bold);
+  white-space: nowrap;
+}
+
+.action:active {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: var(--tap-size);
+  height: var(--tap-size);
+  border-radius: var(--radius-md);
+  color: inherit;
+  opacity: 0.7;
+}
+
+.close:active {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+@media (prefers-color-scheme: dark) {
+  .error .icon {
+    color: #c62828;
+  }
+
+  .action:active,
+  .close:active {
+    background: rgba(0, 0, 0, 0.08);
+  }
+}
