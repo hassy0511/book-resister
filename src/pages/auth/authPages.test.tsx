@@ -163,6 +163,36 @@ describe('LoginPage', () => {
     expect((button as HTMLButtonElement).disabled).toBe(false);
   });
 
+  it('Google の画面から戻ってこなくても、キャンセルやメールアドレスでのログインができる', async () => {
+    const pending = deferred<void>();
+    mocks.auth.signInWithGoogle.mockReturnValue(pending.promise);
+    mocks.auth.signInWithEmail.mockResolvedValue();
+    renderAt('/login');
+    const google = screen.getByRole('button', { name: /Google でログイン/ });
+    fireEvent.click(google);
+    expect((google as HTMLButtonElement).disabled).toBe(true);
+
+    // Google の待ち中もメールアドレスの欄は使える
+    const emailField = screen.getByLabelText('メールアドレス') as HTMLInputElement;
+    expect(emailField.disabled).toBe(false);
+    expect((screen.getByLabelText('パスワード') as HTMLInputElement).disabled).toBe(false);
+
+    // キャンセルで Google のボタンも元に戻る（後から前の呼び出しが終わっても影響しない）
+    fireEvent.click(screen.getByRole('button', { name: /キャンセル/ }));
+    expect((google as HTMLButtonElement).disabled).toBe(false);
+    expect(screen.queryByRole('button', { name: /キャンセル/ })).toBeNull();
+
+    // もう一度 Google を押して待っている間に、メールアドレスでログインする
+    fireEvent.click(google);
+    fireEvent.change(emailField, { target: { value: 'mama@example.com' } });
+    fireEvent.change(screen.getByLabelText('パスワード'), { target: { value: 'secret1' } });
+    fireEvent.click(screen.getByRole('button', { name: 'ログイン' }));
+    await waitFor(() => expect(mocks.auth.signInWithEmail).toHaveBeenCalledWith('mama@example.com', 'secret1'));
+    await act(async () => pending.reject(new Error('前の Google ログインの失敗')));
+    expect(screen.queryByText('前の Google ログインの失敗')).toBeNull();
+    expect((google as HTMLButtonElement).disabled).toBe(false);
+  });
+
   it('パスワード再設定のメールを送る', async () => {
     mocks.auth.sendPasswordReset.mockResolvedValue();
     renderAt('/login');
@@ -179,6 +209,44 @@ describe('LoginPage', () => {
     sessionStorage.setItem('returnTo', `/join/${CODE}`);
     renderAt('/login');
     expect(screen.getByText(/招待リンクから開きました/)).toBeTruthy();
+  });
+});
+
+describe('LoginPage（LINE などのアプリ内ブラウザ）', () => {
+  const LINE_UA =
+    'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 Safari Line/14.9.0';
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    delete (navigator as { clipboard?: unknown }).clipboard;
+  });
+
+  it('Safari で開くよう案内し、Google のボタンは薄くして理由を添える（メールアドレスでのログインはそのまま）', async () => {
+    vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue(LINE_UA);
+    const writeText = vi.fn(async () => undefined);
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    renderAt('/login');
+    const notice = screen.getByRole('region', { name: 'Safari で開いてください' });
+    expect(within(notice).getByText('LINE の中のブラウザで開いています')).toBeTruthy();
+    expect(within(notice).getByText(/「Safari で開く」/)).toBeTruthy();
+
+    const google = screen.getByRole('button', { name: /Google でログイン/ });
+    expect(google.className).toContain('googleDimmed');
+    expect(google).toHaveProperty('disabled', false);
+    expect(screen.getByText(/Google のログインは Google によって止められます/)).toBeTruthy();
+    expect(screen.getByLabelText('メールアドレス')).toHaveProperty('disabled', false);
+
+    await act(async () => {
+      fireEvent.click(within(notice).getByRole('button', { name: 'このページのリンクをコピー' }));
+    });
+    expect(writeText).toHaveBeenCalledWith(window.location.href);
+    expect(within(notice).getByText(/コピーしました/)).toBeTruthy();
+  });
+
+  it('普通の Safari では案内を出さない', () => {
+    renderAt('/login');
+    expect(screen.queryByRole('region', { name: 'Safari で開いてください' })).toBeNull();
+    expect(screen.getByRole('button', { name: /Google でログイン/ }).className).not.toContain('googleDimmed');
   });
 });
 
@@ -273,6 +341,23 @@ describe('JoinPage', () => {
     fireEvent.click(screen.getByRole('button', { name: '参加する' }));
     await waitFor(() => expect(mocks.joinGroup).toHaveBeenCalledWith(CODE, 'パパ'));
     expect((await screen.findByTestId('url')).textContent).toBe('/');
+  });
+
+  it('LINE で開いた招待リンク（?openExternalBrowser=1 付き）でも参加でき、Safari で開き直すよう添える', async () => {
+    const spy = vi
+      .spyOn(navigator, 'userAgent', 'get')
+      .mockReturnValue(
+        'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 Safari Line/14.9.0',
+      );
+    try {
+      mocks.getInvite.mockResolvedValue(invite);
+      renderAt(`/join/${CODE}?openExternalBrowser=1`);
+      expect(await screen.findByRole('heading', { name: '佐藤家' })).toBeTruthy();
+      expect(mocks.getInvite).toHaveBeenCalledWith(CODE);
+      expect(screen.getByText(/いまは LINE の中のブラウザで開いています/)).toBeTruthy();
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it('期限切れ・無効な招待はその旨を表示する', async () => {

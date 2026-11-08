@@ -1,6 +1,7 @@
 /*
  * 履歴画面のロジック（純粋関数）: 絞り込み条件と URL の相互変換、絞り込み、月ごとのまとめ。
  */
+import type { HistoryScope } from '../../data/loans';
 import type { DateString, Loan } from '../../types';
 import { matchesTerms } from './searchText';
 
@@ -140,6 +141,34 @@ export function periodRange(
     case 'all':
       return { from: null, to: null };
   }
+}
+
+/** 全件を読む必要があるか（全期間で検索・絞り込み・2 ページ目以降・絞り込みシートのどれかがある） */
+export function needsAllLoans(input: {
+  filter: Pick<HistoryFilter, 'locationId' | 'borrowerUid' | 'state'>;
+  hasTerms: boolean;
+  visible: number;
+  sheetOpen: boolean;
+}): boolean {
+  const { filter, hasTerms, visible, sheetOpen } = input;
+  return hasTerms || !!filter.locationId || !!filter.borrowerUid || !!filter.state || visible > PAGE_SIZE || sheetOpen;
+}
+
+/**
+ * 履歴で読む範囲を決める（開くたびに全件を読まないため。30 分以上空けて開くと結果の件数分の読み取りになる）。
+ *   - 期間で絞り込んでいれば、その期間だけ（検索や他の絞り込みはその中で行う）
+ *   - 全期間で、全件が必要なら（needsAllLoans。一度読んだら画面を離れるまで allLoaded で保つ）全件
+ *   - それ以外は借りた日の新しい順に 1 ページ分＋1 件（次があるか分かるように）
+ */
+export function historyScopeFor(
+  filter: Pick<HistoryFilter, 'period' | 'from' | 'to'>,
+  today: DateString,
+  wantAll: boolean,
+): HistoryScope {
+  const { from, to } = periodRange(filter, today);
+  if (from || to) return { kind: 'range', from, to };
+  if (wantAll) return { kind: 'all' };
+  return { kind: 'recent', count: PAGE_SIZE + 1 };
 }
 
 /** 貸出記録の状態。返却済みで読書状況が無いものは「読んでいない」とみなす（bookReadState と同じ） */

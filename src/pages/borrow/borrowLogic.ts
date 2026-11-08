@@ -3,7 +3,7 @@
  * Firebase・React に依存しない。
  */
 import { addDays, diffDays, isDateString, parseDateString } from '../../lib/date';
-import { bookIdForIsbn } from '../../lib/isbn';
+import { bookIdForIsbn, normalizeIsbn } from '../../lib/isbn';
 import type { CartItem } from '../../state/borrowCartLogic';
 import type { Book, BookCandidate, DateString, Loan, LoanBookSnapshot, ReadStatus } from '../../types';
 
@@ -143,11 +143,23 @@ export type SubmitCheckInput = {
   borrowerUid: string;
   borrowedOn: DateString;
   bulkDueOn: DateString;
+  /** 今日（端末の日付）。借りた日が今日より後なら登録させない */
+  today: DateString;
 };
+
+/**
+ * 借りた日の入力のエラー（問題なければ null）。
+ * 未来の日付で登録すると返却画面で「返却した日」を選べなくなるため、今日より後は不可
+ * （貸出の詳細の validateBorrowedOn と同じ文言）。
+ */
+export function borrowedOnError(borrowedOn: DateString, today: DateString): string | null {
+  if (!isDateString(borrowedOn)) return null;
+  return isDateString(today) && borrowedOn > today ? '今日より後の日付は選べません' : null;
+}
 
 /** 登録ボタンを押せない理由（押せるなら null） */
 export function submitBlockReason(input: SubmitCheckInput): string | null {
-  const { items, locationId, borrowerUid, borrowedOn, bulkDueOn } = input;
+  const { items, locationId, borrowerUid, borrowedOn, bulkDueOn, today } = input;
   if (items.length === 0) return '借りる本がありません';
   const loading = items.filter((i) => i.status === 'loading').length;
   if (loading > 0) return `本の情報を取得しています（${loading}冊）。少しお待ちください`;
@@ -156,6 +168,7 @@ export function submitBlockReason(input: SubmitCheckInput): string | null {
   if (!locationId) return '借りた場所を選んでください';
   if (!borrowerUid) return '借りた人を選んでください';
   if (!isDateString(borrowedOn)) return '借りた日を入力してください';
+  if (borrowedOnError(borrowedOn, today)) return '借りた日は今日以前にしてください';
   const badDue = items.some((i) => !isValidDue(effectiveDueOn(i, bulkDueOn), borrowedOn));
   if (badDue) {
     if (!isDateString(bulkDueOn) && items.some((i) => !i.dueOnOverride)) return '返却日を入力してください';
@@ -192,8 +205,21 @@ export function rankByAuthor<T extends { authors: string[] }>(list: readonly T[]
   return [...hit, ...rest];
 }
 
-/** グループ内の本からタイトルの部分一致（＋著者）で探す */
-export function matchExistingBooks<T extends { title: string; authors: string[] }>(
+/**
+ * 検索欄の入力が ISBN として読めれば ISBN-13、読めなければ null。
+ * 判定は searchByTitle（数字・X・ハイフン・空白だけの入力を ISBN として扱う）と同じ。
+ */
+export function isbnFromSearchQuery(query: string): string | null {
+  const q = query.trim();
+  if (!q || !/^[\dXx\-ー－\s０-９]+$/.test(q)) return null;
+  return normalizeIsbn(q);
+}
+
+/**
+ * グループ内の本からタイトルの部分一致（＋著者）で探す。
+ * 入力が ISBN として読める場合は、その ISBN の本も（先頭に）出す。
+ */
+export function matchExistingBooks<T extends { title: string; authors: string[]; isbn?: string | null }>(
   books: readonly T[],
   title: string,
   author: string,
@@ -201,9 +227,26 @@ export function matchExistingBooks<T extends { title: string; authors: string[] 
 ): T[] {
   const key = normalizeForSearch(title);
   if (!key) return [];
-  return books
-    .filter((b) => normalizeForSearch(b.title).includes(key) && matchesAuthor(b.authors, author))
-    .slice(0, limit);
+  const isbn = isbnFromSearchQuery(title);
+  const byIsbn = isbn ? books.filter((b) => b.isbn === isbn) : [];
+  const byTitle = books.filter(
+    (b) => !byIsbn.includes(b) && normalizeForSearch(b.title).includes(key) && matchesAuthor(b.authors, author),
+  );
+  return [...byIsbn, ...byTitle].slice(0, limit);
+}
+
+/**
+ * ISBN なしで登録した本のうち、タイトルが同じ（normalizeForSearch で比べて一致）もの。
+ * バーコードが隠れて手入力した本を、後でバーコードで読んだときの「同じ本かも」の手がかりに使う。
+ * タイトルの書き方が違えば見つからないし、同じタイトルの別の本もありうるので、自動ではつなげず利用者に確かめる。
+ */
+export function sameTitleBooksWithoutIsbn<T extends { id: string; title: string; isbn: string | null }>(
+  books: readonly T[],
+  title: string | null | undefined,
+): T[] {
+  const key = title ? normalizeForSearch(title) : '';
+  if (!key) return [];
+  return books.filter((b) => b.isbn === null && normalizeForSearch(b.title) === key);
 }
 
 // ---------------------------------------------------------------------------

@@ -89,6 +89,18 @@
   color: var(--color-text);
 }
 
+/* アプリ内ブラウザでは使えないので薄くする（押せないわけではない） */
+.googleDimmed {
+  opacity: 0.55;
+}
+
+.googleNote {
+  margin-top: calc(-1 * var(--space-2));
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-xs);
+  line-height: 1.6;
+}
+
 /* ---- 区切り ---- */
 .divider {
   display: flex;

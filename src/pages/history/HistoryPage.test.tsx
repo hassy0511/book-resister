@@ -12,10 +12,37 @@ const ts = { toMillis: () => 0 } as unknown as Timestamp;
 const state = vi.hoisted(() => ({
   loans: { data: [] as unknown[], loading: false, error: null as Error | null },
   locations: { data: [] as unknown[], loading: false, error: null as Error | null },
+  /** 画面が読んだ範囲（kind） */
+  scopes: [] as string[],
+  cache: new Map<string, { source: unknown; result: unknown }>(),
+  /** true の間、全件の読み込みが終わらない */
+  allPending: false,
 }));
 
+type MockScope =
+  | { kind: 'recent'; count: number }
+  | { kind: 'range'; from: string | null; to: string | null }
+  | { kind: 'all' };
+
+const PENDING = { data: [], loading: true, error: null };
+
+// 本物と同じく、範囲ごとに借りた日の新しい順の記録を返す（同じ範囲・同じ元データなら同じオブジェクト）
 vi.mock('../../data/loans', () => ({
-  useAllLoans: () => state.loans,
+  useHistoryLoans: (scope: MockScope) => {
+    state.scopes.push(scope.kind);
+    if (scope.kind === 'all' && state.allPending) return PENDING;
+    const key = JSON.stringify(scope);
+    const cached = state.cache.get(key);
+    if (cached && cached.source === state.loans) return cached.result;
+    let data = [...(state.loans.data as { borrowedOn: string }[])].sort((a, b) => b.borrowedOn.localeCompare(a.borrowedOn));
+    if (scope.kind === 'recent') data = data.slice(0, scope.count);
+    if (scope.kind === 'range') {
+      data = data.filter((l) => (!scope.from || l.borrowedOn >= scope.from) && (!scope.to || l.borrowedOn <= scope.to));
+    }
+    const result = { ...state.loans, data };
+    state.cache.set(key, { source: state.loans, result });
+    return result;
+  },
 }));
 vi.mock('../../data/locations', () => ({
   useLocations: () => state.locations,
@@ -86,6 +113,9 @@ beforeEach(() => {
   vi.useFakeTimers({ toFake: ['Date'] });
   vi.setSystemTime(new Date('2026-11-08T09:00:00'));
   sessionStorage.clear();
+  state.scopes = [];
+  state.cache.clear();
+  state.allPending = false;
   state.loans = {
     data: [
       loan('a', { borrowedOn: '2026-11-05', returnedOn: null, readStatus: null }, 'かいけつゾロリのドラゴンたいじ', ['原ゆたか']),
@@ -106,6 +136,8 @@ afterEach(() => {
 describe('HistoryPage', () => {
   it('借りた日の新しい順に月ごとの見出しを付けて表示する', () => {
     renderAt('/history');
+    // 条件が無ければ新しい順に 1 ページ分だけ読む（全件は読まない）
+    expect(new Set(state.scopes)).toEqual(new Set(['recent']));
     const headings = screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent);
     expect(headings).toEqual(['2026年11月1件', '2026年10月1件', '2025年12月1件']);
     expect(screen.getByText('全', { exact: false }).textContent).toContain('3');
@@ -129,6 +161,8 @@ describe('HistoryPage', () => {
       fireEvent.change(box, { target: { value: 'ぞろり' } });
     });
     expect(rowTitles()).toEqual(['かいけつゾロリのドラゴンたいじ']);
+    // 全期間の検索は全件を読む
+    expect(state.scopes.at(-1)).toBe('all');
     expect(screen.getByTestId('url').textContent).toContain('q=');
 
     act(() => {
@@ -181,6 +215,8 @@ describe('HistoryPage', () => {
     });
     expect(rowTitles()).toEqual(['ノンタン ぶらんこのせて']);
     expect(screen.getByTestId('url').textContent).toContain('period=last-year');
+    // 期間で絞り込めばその期間だけ読む
+    expect(state.scopes.at(-1)).toBe('range');
 
     act(() => {
       fireEvent.click(within(dialog).getByRole('radio', { name: 'すべて' }));
@@ -218,9 +254,9 @@ describe('HistoryPage', () => {
     expect(rowTitles()).toHaveLength(2);
   });
 
-  it('100 件ずつ表示し「もっと見る」で増やす', () => {
+  it('最初は新しい順に 100 件だけ読み、「もっと見る」で全件を読んで増やす', () => {
     state.loans = {
-      data: Array.from({ length: 150 }, (_, i) =>
+      data: Array.from({ length: 250 }, (_, i) =>
         loan(`n${i}`, { borrowedOn: `2026-${String(10 - Math.floor(i / 50)).padStart(2, '0')}-01` }),
       ),
       loading: false,
@@ -228,16 +264,49 @@ describe('HistoryPage', () => {
     };
     renderAt('/history');
     expect(rowTitles()).toHaveLength(100);
-    // 見出しの件数は月全体の件数
+    expect(state.scopes).not.toContain('all');
+    expect(screen.getByText('最近の', { exact: false }).textContent).toContain('100');
+    // 最後の月は続きがあるかもしれないので「以上」
+    expect(screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent)).toEqual([
+      '2026年10月50件',
+      '2026年9月50件以上',
+    ]);
+    act(() => {
+      fireEvent.click(screen.getByRole('button', { name: 'もっと見る' }));
+    });
+    expect(state.scopes.at(-1)).toBe('all');
+    expect(rowTitles()).toHaveLength(200);
+    // 全件を読んだ後の見出しの件数は月全体の件数
     expect(screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent)).toEqual([
       '2026年10月50件',
       '2026年9月50件',
+      '2026年8月50件',
+      '2026年7月50件',
     ]);
     act(() => {
       fireEvent.click(screen.getByRole('button', { name: 'もっと見る（残り50件）' }));
     });
-    expect(rowTitles()).toHaveLength(150);
+    expect(rowTitles()).toHaveLength(250);
     expect(screen.queryByRole('button', { name: /もっと見る/ })).toBeNull();
+  });
+
+  it('全件の読み込み中も、前に読んだ記録と検索欄を出したままにする', () => {
+    state.allPending = true;
+    renderAt('/history');
+    const box = screen.getByRole('searchbox', { name: 'タイトル・著者で検索' });
+    act(() => {
+      fireEvent.change(box, { target: { value: 'ぞろり' } });
+    });
+    expect(state.scopes.at(-1)).toBe('all');
+    expect(screen.getByRole('searchbox', { name: 'タイトル・著者で検索' })).toBe(box);
+    expect(screen.getByText('記録を読み込んでいます')).toBeTruthy();
+    expect(rowTitles()).toEqual(['かいけつゾロリのドラゴンたいじ']);
+  });
+
+  it('期間で絞り込んで記録が無くても、「まだ記録はありません」ではなく条件に合わない旨を出す', () => {
+    renderAt('/history?period=range&from=2020-01-01&to=2020-12-31');
+    expect(screen.queryByText('まだ貸出の記録はありません')).toBeNull();
+    expect(screen.getByText('条件に合う記録はありません')).toBeTruthy();
   });
 
   it('記録が無いときは案内を出す', () => {

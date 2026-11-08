@@ -3,6 +3,8 @@
  *   - getInvite で招待を確認し「〇〇 に参加しますか？」→ 表示名を入れて joinGroup → ホーム
  *   - 期限切れ・無効なリンク、すでに別のグループに参加している場合（1 人 1 グループ）はその旨を表示
  * 未ログインで開いた場合は App.tsx がログイン後にこの画面へ戻す。
+ * LINE などのアプリ内ブラウザで開いている場合は、参加後に Safari で開き直してホーム画面に追加するよう添える
+ * （アプリ内ブラウザからはホーム画面に追加できず、通知を受け取れないため）。
  */
 import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
@@ -23,6 +25,7 @@ import {
   useToast,
 } from '../../components/ui';
 import { AlertIcon, CheckCircleIcon, UsersIcon } from '../../components/ui/icons';
+import { detectInAppBrowser } from '../../components/inAppBrowser';
 import { MAX_NAME_LENGTH, validateDisplayName } from './authLogic';
 import styles from './JoinPage.module.css';
 
@@ -188,6 +191,7 @@ function JoinForm({ code, invite, defaultDisplayName, email, onJoiningChange, on
   const [displayName, setDisplayName] = useState(defaultDisplayName);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [inAppBrowser] = useState(() => detectInAppBrowser());
 
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -242,6 +246,13 @@ function JoinForm({ code, invite, defaultDisplayName, email, onJoiningChange, on
           参加する
         </Button>
       </form>
+
+      {inAppBrowser ? (
+        <p className={styles.inAppHint}>
+          いまは {inAppBrowser} の中のブラウザで開いています。参加したあとは、メニューの「Safari
+          で開く」で開き直し、ホーム画面に追加して使ってください（ここからはホーム画面に追加できず、返却日の通知も受け取れません）。
+        </p>
+      ) : null}
 
       <div className={styles.account}>
         {email ? <p className={styles.accountText}>ログイン中: {email}</p> : null}

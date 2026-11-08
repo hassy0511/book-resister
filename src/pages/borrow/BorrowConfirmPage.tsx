@@ -4,7 +4,11 @@
  *                 返却日（借りた日＋場所の貸出期間で自動計算。手で変えたらその値を保ち、自動計算に戻せる）
  *   本ごと:       表紙・タイトル（見つからなかった本はタイトルを入力）、シリーズ名・巻数、この本だけの返却日、外す
  *   注意の表示:   いま貸出中（F-28）、前に借りたことがある（F-27）、リスト内の重複
- *   登録:         シリーズ名があれば findOrCreateSeries → upsertBookFromCandidate → createLoans（1 バッチ）
+ *                 ISBN の本で、ISBN なしで登録した同じタイトルの本がある（バーコードが隠れて手入力した本を
+ *                 後でバーコードで読んだ場合など）→「同じ本として借りる」で前の本の貸出として記録できる（自動ではつなげない）
+ *                 ISBN なしでタイトルが同じ登録済みの本に結び付けた場合は「別の本として登録」で外せる
+ *   登録:         シリーズ名があれば findOrCreateSeries → saveBookFromCandidate（結び付けた本があればその本を使い、
+ *                 タイトルで探し直さない）→ createLoans（1 バッチ）
  *                 → カートを空にしてホームへ。途中で失敗したらカートは残す。
  */
 import { useMemo, useRef, useState } from 'react';
@@ -38,7 +42,7 @@ import {
   ScanIcon,
   TrashIcon,
 } from '../../components/ui/icons';
-import { updateBook, upsertBookFromCandidate, useBooks } from '../../data/books';
+import { saveBookFromCandidate, updateBook, useBooksByIds, useBooksWithoutIsbn } from '../../data/books';
 import { createLoans, useActiveLoans, useLoansForBooks, type NewLoanInput } from '../../data/loans';
 import { useLocations } from '../../data/locations';
 import { findOrCreateSeries, useSeriesList } from '../../data/series';
@@ -52,6 +56,7 @@ import { useToday } from '../home/useToday';
 import {
   autoDueOn,
   bookIdForCartItem,
+  borrowedOnError,
   describeLoan,
   duplicatedBookIds,
   effectiveDueOn,
@@ -61,6 +66,7 @@ import {
   loadLastLocationId,
   loanSnapshotFor,
   pickDefaultLocationId,
+  sameTitleBooksWithoutIsbn,
   saveLastLocationId,
   splitAuthors,
   submitBlockReason,
@@ -69,6 +75,10 @@ import styles from './BorrowConfirmPage.module.css';
 
 const UNKNOWN_LOCATION = '（不明な場所）';
 const NO_LOANS: WithId<Loan>[] = [];
+const NO_BOOKS: WithId<Book>[] = [];
+
+/** ISBN なしで登録した同じタイトルの本と、その貸出記録 */
+type SameTitleBook = { book: WithId<Book>; loans: WithId<Loan>[]; activeLoans: WithId<Loan>[] };
 
 function errorText(e: unknown): string {
   return e instanceof Error && e.message ? e.message : '登録できませんでした。もう一度お試しください。';
@@ -83,14 +93,36 @@ export default function BorrowConfirmPage() {
 
   const locationsQuery = useLocations({ includeArchived: true });
   const activeLoansQuery = useActiveLoans();
-  const booksQuery = useBooks();
   const seriesQuery = useSeriesList();
 
   const items = cart.items;
-  const bookIds = useMemo(
+  // 本は全件ではなく、カートの本と ISBN なしで登録した本だけを読む（読み取りの回数を件数に比例させない）
+  const cartBookIds = useMemo(
     () => items.map((i) => bookIdForCartItem(i)).filter((id): id is string => id !== null),
     [items],
   );
+  const cartBooksQuery = useBooksByIds(cartBookIds);
+  const hasIsbnItem = items.some((i) => i.isbn !== null && !i.existingBookId);
+  const noIsbnBooksQuery = useBooksWithoutIsbn(hasIsbnItem);
+  const booksById = useMemo(() => new Map(cartBooksQuery.data.map((b) => [b.id, b])), [cartBooksQuery.data]);
+  // ISBN の本なのに ISBN の ID の本が無く、ISBN なしで登録した同じタイトルの本がある（同じ本かもしれない）
+  const sameTitleByKey = useMemo(() => {
+    const map = new Map<string, WithId<Book>[]>();
+    if (cartBooksQuery.loading) return map;
+    for (const item of items) {
+      if (!item.isbn || item.status === 'loading' || item.existingBookId) continue;
+      const id = bookIdForCartItem(item);
+      if (id && booksById.has(id)) continue;
+      const matches = sameTitleBooksWithoutIsbn(noIsbnBooksQuery.data, item.candidate?.title);
+      if (matches.length > 0) map.set(item.key, matches);
+    }
+    return map;
+  }, [items, booksById, cartBooksQuery.loading, noIsbnBooksQuery.data]);
+  const bookIds = useMemo(() => {
+    const ids = items.map((i) => bookIdForCartItem(i)).filter((id): id is string => id !== null);
+    for (const books of sameTitleByKey.values()) ids.push(...books.map((b) => b.id));
+    return ids;
+  }, [items, sameTitleByKey]);
   const bookLoansQuery = useLoansForBooks(bookIds);
 
   // ---- まとめて設定 ----
@@ -132,7 +164,6 @@ export default function BorrowConfirmPage() {
   );
 
   // ---- 注意の表示に使う情報 ----
-  const booksById = useMemo(() => new Map(booksQuery.data.map((b) => [b.id, b])), [booksQuery.data]);
   const activeByBook = useMemo(() => {
     const map = new Map<string, WithId<Loan>[]>();
     for (const l of activeLoansQuery.data) {
@@ -153,13 +184,35 @@ export default function BorrowConfirmPage() {
   }, [bookLoansQuery.data]);
   const duplicates = useMemo(() => duplicatedBookIds(items), [items]);
 
+  /**
+   * ISBN の本を、ISBN なしで登録した既存の本として借りる（利用者が「同じ本」と確かめたとき）。
+   * 既存の本の貸出として記録し、本の ID と ISBN（null）は変えない。この本だけの返却日と、
+   * 既存の本にシリーズが無ければ書誌のシリーズ・巻数を引き継ぐ。
+   */
+  const linkToExistingBook = (item: CartItem, target: WithId<Book>) => {
+    cart.remove(item.key);
+    if (cart.addExistingBook(target) === 'duplicate') {
+      toast.show('この本はすでに借りる本のリストに入っています');
+      return;
+    }
+    const patch: CartItemPatch = {};
+    if (item.dueOnOverride) patch.dueOnOverride = item.dueOnOverride;
+    if (!target.seriesId && item.seriesName) {
+      patch.seriesName = item.seriesName;
+      patch.volume = target.volume ?? item.volume;
+    }
+    // ISBN の無い本のカートのキーは本の ID
+    if (Object.keys(patch).length > 0) cart.update(target.id, patch);
+    toast.show(`前に登録した「${target.title}」として借ります`, { tone: 'success' });
+  };
+
   // ---- 登録 ----
   const [busy, setBusy] = useState(false);
   const busyRef = useRef(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [removeTarget, setRemoveTarget] = useState<CartItem | null>(null);
 
-  const blockReason = submitBlockReason({ items, locationId, borrowerUid, borrowedOn, bulkDueOn });
+  const blockReason = submitBlockReason({ items, locationId, borrowerUid, borrowedOn, bulkDueOn, today });
 
   const submit = async () => {
     if (busyRef.current || blockReason) return;
@@ -181,8 +234,13 @@ export default function BorrowConfirmPage() {
           seriesIds.set(key, seriesId);
         }
         const candidate = { ...base, isbn: base.isbn ?? item.isbn, seriesName, volume: item.volume };
-        const bookId = await upsertBookFromCandidate(groupId, candidate, { seriesId, volume: item.volume });
-        const existing = booksById.get(bookId) ?? null;
+        // 結び付けた本（ISBN・タイトル・利用者が選んだ本）があれば、タイトルで探し直さずにその本を使う
+        const { id: bookId, existing } = await saveBookFromCandidate(
+          groupId,
+          candidate,
+          { seriesId, volume: item.volume },
+          { bookId: item.existingBookId, forceNew: item.forceNew },
+        );
         // 既存の本のシリーズ・巻数をこの画面で変えた場合は、本のほうも合わせる
         const patch = existingSeriesPatch(existing, { seriesId, volume: item.volume });
         if (Object.keys(patch).length > 0) await updateBook(groupId, bookId, patch);
@@ -339,6 +397,7 @@ export default function BorrowConfirmPage() {
                 value={borrowedOn}
                 onChange={(v) => setBorrowedChoice(v)}
                 max={today}
+                error={borrowedOnError(borrowedOn, today) ?? undefined}
                 disabled={busy}
               />
               <DateField
@@ -381,6 +440,12 @@ export default function BorrowConfirmPage() {
                   seriesList={seriesQuery.data}
                   activeLoans={bookId ? (activeByBook.get(bookId) ?? NO_LOANS) : NO_LOANS}
                   pastLoans={bookId ? (loansByBook.get(bookId) ?? NO_LOANS) : NO_LOANS}
+                  sameTitleBooks={(sameTitleByKey.get(item.key) ?? NO_BOOKS).map((b) => ({
+                    book: b,
+                    loans: loansByBook.get(b.id) ?? NO_LOANS,
+                    activeLoans: activeByBook.get(b.id) ?? NO_LOANS,
+                  }))}
+                  onLinkBook={(target) => linkToExistingBook(item, target)}
                   duplicated={bookId !== null && duplicates.has(bookId)}
                   locationName={locationName}
                   memberName={memberName}
@@ -428,6 +493,9 @@ type CartItemCardProps = {
   activeLoans: WithId<Loan>[];
   /** この本の貸出記録（貸出中も含む） */
   pastLoans: WithId<Loan>[];
+  /** ISBN なしで登録した同じタイトルの本（同じ本かもしれない） */
+  sameTitleBooks: SameTitleBook[];
+  onLinkBook: (book: WithId<Book>) => void;
   duplicated: boolean;
   locationName: (id: string) => string;
   memberName: (uid: string) => string;
@@ -444,12 +512,16 @@ function CartItemCard({
   seriesList,
   activeLoans,
   pastLoans,
+  sameTitleBooks,
+  onLinkBook,
   duplicated,
   locationName,
   memberName,
   onUpdate,
   onRemove,
 }: CartItemCardProps) {
+  // 「別の本」を選んだら、この画面にいる間は聞き直さない
+  const [sameTitleDismissed, setSameTitleDismissed] = useState(false);
   const loading = item.status === 'loading';
   const notFound = item.status === 'not-found';
   const title = itemTitle(item);
@@ -508,7 +580,11 @@ function CartItemCard({
           )}
           {!notFound && authors ? <p className={styles.itemMeta}>{authors}</p> : null}
           {item.isbn ? <p className={styles.itemIsbn}>ISBN {formatIsbn(item.isbn)}</p> : null}
-          {item.existingBookId ? <span className={styles.existingBadge}>登録済みの本</span> : null}
+          {item.existingBookId ? (
+            <span className={styles.existingBadge}>
+              {item.matchedBy === 'title' ? '同じタイトルの登録済みの本' : '登録済みの本'}
+            </span>
+          ) : null}
         </div>
         <IconButton
           label={`${title ?? 'この本'}をリストから外す`}
@@ -563,6 +639,72 @@ function CartItemCard({
             {returnedCount > 1 ? `（これまでに${returnedCount}回）` : ''}
           </span>
         </p>
+      ) : null}
+      {item.matchedBy === 'title' && item.existingBookId ? (
+        <div className={`${styles.notice} ${styles.noticeInfo}`} role="group" aria-label="タイトルで結び付けた本">
+          <InfoIcon size={18} className={styles.noticeIcon} />
+          <div className={styles.sameTitle}>
+            <p className={styles.sameTitleLead}>
+              ISBN が無いので、タイトルが同じ登録済みの本として借ります。別の版や別の号など、違う本なら外してください。
+            </p>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => onUpdate({ forceNew: true })}
+              disabled={busy}
+              className={styles.sameTitleNo}
+            >
+              別の本として登録
+            </Button>
+          </div>
+        </div>
+      ) : null}
+      {item.forceNew && !item.existingBookId ? (
+        <p className={styles.seriesNote}>同じタイトルの登録済みの本とは別の本として、新しく登録します。</p>
+      ) : null}
+      {sameTitleBooks.length > 0 && !sameTitleDismissed ? (
+        <div className={`${styles.notice} ${styles.noticeInfo}`} role="group" aria-label="同じタイトルの本の確認">
+          <InfoIcon size={18} className={styles.noticeIcon} />
+          <div className={styles.sameTitle}>
+            <p className={styles.sameTitleLead}>ISBN なしで登録した同じタイトルの本があります。同じ本ですか？</p>
+            {sameTitleBooks.map(({ book, loans, activeLoans: bookActive }) => {
+              const latest = latestReturnedLoan(loans);
+              let detail: string;
+              if (bookActive.length > 0) {
+                const l = bookActive[0];
+                detail = `いま貸出中（${memberName(l.borrowerUid)}・${locationName(l.locationId)}・${formatDate(l.dueOn)}まで）`;
+              } else if (latest) {
+                detail = `前回：${describeLoan(latest, locationName(latest.locationId), memberName(latest.borrowerUid))}`;
+              } else {
+                detail = '貸出の記録はありません';
+              }
+              return (
+                <div key={book.id} className={styles.sameTitleBook}>
+                  <p>
+                    <span className={styles.sameTitleName}>「{book.title}」</span>
+                    {book.authors.length > 0 ? <span className={styles.sameTitleMeta}>{book.authors.join('、')}</span> : null}
+                    <span className={styles.sameTitleMeta}>{detail}</span>
+                  </p>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => onLinkBook(book)}
+                    disabled={busy}
+                    aria-label={`「${book.title}」と同じ本として借りる`}
+                  >
+                    同じ本として借りる
+                  </Button>
+                </div>
+              );
+            })}
+            <Button variant="ghost" size="sm" onClick={() => setSameTitleDismissed(true)} disabled={busy} className={styles.sameTitleNo}>
+              別の本（このまま新しく登録する）
+            </Button>
+            <p className={styles.sameTitleHelp}>
+              「同じ本として借りる」を選ぶと、前に登録した本の貸出として記録します（前の本に ISBN は付きません）。
+            </p>
+          </div>
+        </div>
       ) : null}
       {duplicated ? (
         <p className={`${styles.notice} ${styles.noticeWarning}`}>

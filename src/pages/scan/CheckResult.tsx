@@ -1,7 +1,10 @@
 /*
  * スキャンで確認（既読チェック, F-80〜83）の結果シート。登録はしない。
  *   - グループ内に本があれば: 貸出の履歴（いつ・どこで・誰が・読書状況）、いま貸出中か
- *   - 無ければ: 書誌情報（lookupByIsbn）と「まだ借りたことがありません」
+ *   - 無ければ: 「まだ借りたことがありません」を本の一覧の読み込みが終わった時点ですぐ出し、
+ *     書誌情報（lookupByIsbn）は取得でき次第あとから表示する（遅い回線でも判定を待たせない。最大 10 秒で打ち切る）
+ *   - グループに無い本でも、書誌のタイトルが「ISBN なしで登録した本」（バーコードが隠れて手入力した本など）と
+ *     同じなら、同じ本とは決めつけずに「同じタイトルの本があります」としてその本の履歴と詳細へのリンクを出す
  *   - シリーズの本なら: 同じシリーズで借りた巻・まだの巻の要約とシリーズ画面へのリンク
  *     （グループに無い本でも、書誌のシリーズ名が登録済みのシリーズと一致すれば表示する）
  *   - 「この本を借りる」でカートに入れて確認画面へ、「続けて確認する」でカメラに戻る
@@ -14,7 +17,7 @@ import { BookCover } from '../../components/BookCover';
 import { ReadStateBadge } from '../../components/ReadStateBadge';
 import { Button, ErrorState, LinkButton, Sheet, Spinner, useToast } from '../../components/ui';
 import { AlertIcon, BookIcon, CheckCircleIcon, ChevronRightIcon, InfoIcon, PlusIcon, ScanIcon } from '../../components/ui/icons';
-import { useBooks } from '../../data/books';
+import { useBook, useBooksInSeries, useBooksWithoutIsbn } from '../../data/books';
 import { useLoansForBook, useLoansForBooks } from '../../data/loans';
 import { useLocations } from '../../data/locations';
 import { bookReadState } from '../../data/readStatus';
@@ -25,13 +28,25 @@ import { formatDate } from '../../lib/date';
 import { bookIdForIsbn, formatIsbn } from '../../lib/isbn';
 import { findMatchingSeries } from '../../lib/series';
 import { useBorrowCart } from '../../state/borrowCart';
-import type { Book, BookCandidate, WithId } from '../../types';
-import { READ_STATUS_SHORT, formatFullDate } from '../borrow/borrowLogic';
+import type { Book, BookCandidate, Loan, WithId } from '../../types';
+import { READ_STATUS_SHORT, formatFullDate, sameTitleBooksWithoutIsbn } from '../borrow/borrowLogic';
 import { formatVolumeRanges, summarizeSeries } from './scanLogic';
 import styles from './CheckResult.module.css';
 
 const UNKNOWN_LOCATION = '（不明な場所）';
 const NO_BOOKS: WithId<Book>[] = [];
+
+/**
+ * 書誌の取得を待つ最大時間（ミリ秒）。lookupByIsbn は API を順に呼ぶため、応答の無い回線では
+ * 1 冊に 20 秒以上かかることがある。超えたら中断し、それまでに得られた結果（無ければ「見つからない」）を表示する。
+ */
+const CHECK_LOOKUP_CAP_MS = 10_000;
+
+/**
+ * 本がこの端末のキャッシュに無く、サーバーの応答も無いとき（オフラインなど）に「未登録」とみなすまでの時間。
+ * 本は全件ではなく ID で 1 冊だけ読むため、待ち続けると読み込み中のままになる。
+ */
+const BOOK_MISSING_AFTER_MS = 3000;
 
 /** ISBN から書誌情報を取得する（isbn が null の間は何もしない） */
 function useIsbnLookup(isbn: string | null): { loading: boolean; candidate: BookCandidate | null } {
@@ -40,12 +55,20 @@ function useIsbnLookup(isbn: string | null): { loading: boolean; candidate: Book
   useEffect(() => {
     if (!isbn) return undefined;
     const controller = new AbortController();
+    let cancelled = false;
+    // 時間切れの中断では、lookupByIsbn がそれまでの結果を返すので表示に使う
+    const timer = window.setTimeout(() => controller.abort(), CHECK_LOOKUP_CAP_MS);
     lookupByIsbn(isbn, { signal: controller.signal })
       .catch(() => null)
       .then((candidate) => {
-        if (!controller.signal.aborted) setResult({ isbn, candidate });
+        window.clearTimeout(timer);
+        if (!cancelled) setResult({ isbn, candidate });
       });
-    return () => controller.abort();
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+      controller.abort();
+    };
   }, [isbn]);
 
   if (!isbn) return { loading: false, candidate: null };
@@ -75,16 +98,28 @@ function CheckResultContent({ isbn, open, onContinue }: { isbn: string; open: bo
   const cart = useBorrowCart();
   const { memberName } = useGroup();
 
-  const booksQuery = useBooks();
+  // 本は全件を読まず、ISBN から決まる ID の 1 冊・同じシリーズの本・ISBN なしの本だけを読む
+  const bookId = bookIdForIsbn(isbn);
+  const bookQuery = useBook(bookId, { missingAfterMs: BOOK_MISSING_AFTER_MS });
   const seriesQuery = useSeriesList();
   const locationsQuery = useLocations({ includeArchived: true });
 
-  const bookId = bookIdForIsbn(isbn);
-  const book = useMemo(() => booksQuery.data.find((b) => b.id === bookId) ?? null, [booksQuery.data, bookId]);
+  const book = bookQuery.data;
   const loansQuery = useLoansForBook(bookId);
+  const notRegistered = !bookQuery.loading && !book;
   // グループに無い本だけ書誌を調べる
-  const lookup = useIsbnLookup(!booksQuery.loading && !book ? isbn : null);
+  const lookup = useIsbnLookup(notRegistered ? isbn : null);
   const candidate = lookup.candidate;
+  const lookupPending = !book && lookup.loading;
+
+  // ISBN なしで登録した、書誌のタイトルと同じタイトルの本（同じ本かもしれない）
+  const noIsbnBooksQuery = useBooksWithoutIsbn(notRegistered);
+  const sameTitleBooks = useMemo(
+    () => (book ? NO_BOOKS : sameTitleBooksWithoutIsbn(noIsbnBooksQuery.data, candidate?.title)),
+    [book, noIsbnBooksQuery.data, candidate],
+  );
+  const sameTitleIds = useMemo(() => sameTitleBooks.map((b) => b.id), [sameTitleBooks]);
+  const sameTitleLoansQuery = useLoansForBooks(sameTitleIds);
 
   // シリーズ（本のシリーズ、または書誌のシリーズ名に一致する登録済みのシリーズ）
   const series = useMemo(() => {
@@ -92,10 +127,8 @@ function CheckResultContent({ isbn, open, onContinue }: { isbn: string; open: bo
     if (!book && candidate?.seriesName) return findMatchingSeries(candidate.seriesName, seriesQuery.data);
     return null;
   }, [book, candidate, seriesQuery.data]);
-  const seriesBooks = useMemo(
-    () => (series ? booksQuery.data.filter((b) => b.seriesId === series.id) : NO_BOOKS),
-    [series, booksQuery.data],
-  );
+  const seriesBooksQuery = useBooksInSeries(series?.id);
+  const seriesBooks = series ? seriesBooksQuery.data : NO_BOOKS;
   const seriesBookIds = useMemo(() => seriesBooks.map((b) => b.id), [seriesBooks]);
   const seriesLoansQuery = useLoansForBooks(seriesBookIds);
   const seriesSummary = useMemo(
@@ -122,8 +155,9 @@ function CheckResultContent({ isbn, open, onContinue }: { isbn: string; open: bo
   const coverUrl = book?.coverUrl ?? candidate?.coverUrl ?? null;
   const volume = book?.volume ?? candidate?.volume ?? null;
 
-  const loading = booksQuery.loading || (book ? loansQuery.loading : lookup.loading);
-  const error = booksQuery.error ?? (book ? loansQuery.error : null);
+  // 「借りたことがあるか」はグループの本と貸出記録だけで決まるので、書誌の取得は待たない
+  const loading = bookQuery.loading || (book ? loansQuery.loading : false);
+  const error = bookQuery.error ?? (book ? loansQuery.error : null);
 
   const handleBorrow = () => {
     const result = book ? cart.addExistingBook(book) : candidate ? cart.addCandidate(candidate) : cart.addIsbn(isbn);
@@ -144,6 +178,11 @@ function CheckResultContent({ isbn, open, onContinue }: { isbn: string; open: bo
           <div className={styles.bookText}>
             {title ? (
               <p className={styles.title}>{title}</p>
+            ) : lookupPending ? (
+              <p className={styles.titleLoading}>
+                <Spinner size="sm" label="本の情報を取得しています" />
+                <span>本の情報を取得しています…</span>
+              </p>
             ) : (
               <p className={styles.titleMissing}>本の情報が見つかりませんでした</p>
             )}
@@ -168,7 +207,9 @@ function CheckResultContent({ isbn, open, onContinue }: { isbn: string; open: bo
             <InfoIcon size={26} className={styles.verdictIcon} />
             <div className={styles.verdictText}>
               <p className={styles.verdictTitle}>まだ借りたことがありません</p>
-              {!book && !candidate ? (
+              {sameTitleBooks.length > 0 ? (
+                <p className={styles.verdictSub}>ただし、ISBN なしで登録した同じタイトルの本があります（下に表示）</p>
+              ) : !book && !candidate && !lookup.loading ? (
                 <p className={styles.verdictSub}>「この本を借りる」からタイトルを入力して登録できます</p>
               ) : null}
             </div>
@@ -189,25 +230,7 @@ function CheckResultContent({ isbn, open, onContinue }: { isbn: string; open: bo
             <h3 id="check-history" className={styles.sectionTitle}>
               貸出の履歴
             </h3>
-            <ul className={styles.history}>
-              {loans.map((l) => (
-                <li key={l.id} className={styles.historyRow}>
-                  <div className={styles.historyMain}>
-                    <span className={styles.historyDate}>{formatFullDate(l.borrowedOn)}</span>
-                    <span className={styles.historyMeta}>
-                      {locationName(l.locationId)} · {memberName(l.borrowerUid)}
-                    </span>
-                  </div>
-                  {l.returnedOn == null ? (
-                    <span className={`${styles.status} ${styles.statusReading}`}>貸出中</span>
-                  ) : (
-                    <span className={`${styles.status} ${l.readStatus ? styles[l.readStatus] : ''}`}>
-                      {l.readStatus ? READ_STATUS_SHORT[l.readStatus] : '返却済み'}
-                    </span>
-                  )}
-                </li>
-              ))}
-            </ul>
+            <LoanHistoryList loans={loans} locationName={locationName} memberName={memberName} />
             {book ? (
               <LinkButton to={`/books/${book.id}`} variant="ghost" size="sm" className={styles.moreLink}>
                 本の詳細を見る
@@ -217,13 +240,67 @@ function CheckResultContent({ isbn, open, onContinue }: { isbn: string; open: bo
           </section>
         ) : null}
 
+        {sameTitleBooks.length > 0 ? (
+          <section className={styles.section} aria-labelledby="check-same-title">
+            <h3 id="check-same-title" className={styles.sectionTitle}>
+              ISBN なしで登録した同じタイトルの本
+            </h3>
+            <p className={styles.sameTitleNote}>
+              バーコードを読まずに（手入力で）登録した本です。同じ本かどうか、表紙や貸出の履歴で確かめてください。
+            </p>
+            {sameTitleLoansQuery.loading ? (
+              <Spinner size="sm" label="同じタイトルの本の履歴を読み込んでいます" />
+            ) : (
+              sameTitleBooks.map((b) => {
+                const bookLoans = sameTitleLoansQuery.data.filter((l) => l.bookId === b.id);
+                return (
+                  <div key={b.id} className={styles.sameTitleBook}>
+                    <div className={styles.sameTitleHead}>
+                      <BookCover title={b.title} coverUrl={b.coverUrl} size="sm" />
+                      <div className={styles.bookText}>
+                        <p className={styles.sameTitleTitle}>{b.title}</p>
+                        <p className={styles.verdictSub}>
+                          {bookLoans.length > 0 ? `これまでに${bookLoans.length}回` : 'まだ貸出の記録はありません'}
+                          {bookLoans.length > 0 ? <ReadStateBadge state={bookReadState(bookLoans)} /> : null}
+                        </p>
+                      </div>
+                    </div>
+                    {bookLoans
+                      .filter((l) => l.returnedOn == null)
+                      .map((l) => (
+                        <p key={l.id} className={styles.current}>
+                          <AlertIcon size={18} className={styles.currentIcon} />
+                          <span>
+                            いま{memberName(l.borrowerUid)}が{locationName(l.locationId)}で借りています（{formatDate(l.dueOn)}まで）
+                          </span>
+                        </p>
+                      ))}
+                    {bookLoans.length > 0 ? (
+                      <LoanHistoryList loans={bookLoans} locationName={locationName} memberName={memberName} />
+                    ) : null}
+                    <LinkButton
+                      to={`/books/${encodeURIComponent(b.id)}`}
+                      variant="ghost"
+                      size="sm"
+                      className={styles.moreLink}
+                    >
+                      この本の詳細を見る
+                      <ChevronRightIcon size={16} />
+                    </LinkButton>
+                  </div>
+                );
+              })
+            )}
+          </section>
+        ) : null}
+
         {series && seriesSummary ? (
           <section className={styles.section} aria-labelledby="check-series">
             <h3 id="check-series" className={styles.sectionTitle}>
               シリーズ「{series.name}」
               {volume != null ? <span className={styles.thisVolume}>この本は{volume}巻</span> : null}
             </h3>
-            {seriesLoansQuery.loading ? (
+            {seriesBooksQuery.loading || seriesLoansQuery.loading ? (
               <Spinner size="sm" label="シリーズの状況を読み込んでいます" />
             ) : (
               <dl className={styles.seriesList}>
@@ -297,5 +374,38 @@ function CheckResultContent({ isbn, open, onContinue }: { isbn: string; open: bo
     >
       {body}
     </Sheet>
+  );
+}
+
+/** 貸出の履歴（新しい順）。いつ・どこで・誰が・読書状況 */
+function LoanHistoryList({
+  loans,
+  locationName,
+  memberName,
+}: {
+  loans: readonly WithId<Loan>[];
+  locationName: (id: string) => string;
+  memberName: (uid: string) => string;
+}) {
+  return (
+    <ul className={styles.history}>
+      {loans.map((l) => (
+        <li key={l.id} className={styles.historyRow}>
+          <div className={styles.historyMain}>
+            <span className={styles.historyDate}>{formatFullDate(l.borrowedOn)}</span>
+            <span className={styles.historyMeta}>
+              {locationName(l.locationId)} · {memberName(l.borrowerUid)}
+            </span>
+          </div>
+          {l.returnedOn == null ? (
+            <span className={`${styles.status} ${styles.statusReading}`}>貸出中</span>
+          ) : (
+            <span className={`${styles.status} ${l.readStatus ? styles[l.readStatus] : ''}`}>
+              {l.readStatus ? READ_STATUS_SHORT[l.readStatus] : '返却済み'}
+            </span>
+          )}
+        </li>
+      ))}
+    </ul>
   );
 }

@@ -8,6 +8,8 @@
  * - 内容は localStorage に保存する（読めない環境では保存しないだけ）。復元時に「取得中」の本は取得し直す。
  * - 既存の本（ISBN の本は ID が isbn-<ISBN13>、無い本はタイトル完全一致）があれば existingBookId を設定し、
  *   本の情報とシリーズを優先して表示する。シリーズ名・巻数の初期値は「既存の本のシリーズ」＞「候補の値」。
+ *   どうやって結び付けたかは matchedBy に残す。タイトルの一致は別の本のこともあるので、
+ *   update(key, { forceNew: true }) で外して別の本として登録できる（結び付ける前の内容に戻る）。
  * - グループ未参加（ログイン前など）でも動く（既存の本の確認をしないだけ）。
  *   保存したときと別のグループに切り替わったら中身を捨てる。
  */
@@ -276,14 +278,16 @@ export function BorrowCartProvider({ children }: { children: ReactNode }) {
   const addCandidate = useCallback(
     (c: BookCandidate): AddResult => {
       const isbn = cartIsbn(c.isbn);
-      if (findDuplicate(itemsRef.current, { isbn, titleWithoutIsbn: isbn ? null : c.title })) return 'duplicate';
+      if (findDuplicate(itemsRef.current, { isbn, titleWithoutIsbn: isbn ? null : c.title, volume: c.volume })) {
+        return 'duplicate';
+      }
       const key = isbn ?? randomCartKey();
       const item = itemFromCandidate({ ...c, isbn }, key);
       commit((prev) => [...prev, item]);
-      // 既存の本の確認（ISBN なら ID、無ければタイトル完全一致）
+      // 既存の本の確認（ISBN なら ID、無ければタイトル完全一致。タイトルの一致は確認画面で外せる）
       void findExisting((gid) => findBookForCandidate(gid, item.candidate ?? c)).then((ex) => {
         if (!ex) return;
-        updateItem(key, (i) => applyExisting(i, ex));
+        updateItem(key, (i) => applyExisting(i, ex, isbn ? 'isbn' : 'title'));
       });
       return 'added';
     },
@@ -302,7 +306,7 @@ export function BorrowCartProvider({ children }: { children: ReactNode }) {
         // シリーズ一覧の読み込み後に名前を入れる（利用者が入力済みなら上書きしない）
         void seriesNameFor(book.seriesId).then((name) => {
           if (!name) return;
-          updateItem(key, (i) => (i.seriesName ? i : applyExisting(i, { book, seriesName: name })));
+          updateItem(key, (i) => (i.seriesName ? i : applyExisting(i, { book, seriesName: name }, 'chosen')));
         });
       }
       return 'added';

@@ -2,10 +2,14 @@ import { describe, expect, it } from 'vitest';
 import {
   findMatchingSeries,
   guessSeries,
+  guessSeriesDetail,
   isLabelLikeSeriesName,
   kanjiToNumber,
   normalizeSeriesName,
   parseVolume,
+  parseVolumePosition,
+  resolvePositionVolume,
+  titleVolumePosition,
 } from './series';
 
 const S = (seriesName: string | null, volume: number | null) => ({ seriesName, volume });
@@ -36,7 +40,7 @@ describe('guessSeries: 括弧', () => {
     ['ねこ（3巻）', 'ねこ', 3],
     ['ねこ (vol.2)', 'ねこ', 2],
     ['ねこ（上）', 'ねこ', 1],
-    ['ねこ (下)', 'ねこ', 3],
+    ['ねこ (下)', 'ねこ', 2],
   ])('%s', (title, name, vol) => {
     expect(guessSeries(title)).toEqual(S(name, vol));
   });
@@ -142,17 +146,26 @@ describe('guessSeries: 丸数字・ローマ数字', () => {
 });
 
 describe('guessSeries: 上・中・下／前編・後編', () => {
+  // 上下 2 冊組が多いので 下 = 2（3 冊組の「下」は保存時に resolvePositionVolume で 3 にする）
   it.each([
-    ['ハリー・ポッターと炎のゴブレット 上', 'ハリー・ポッターと炎のゴブレット', 1],
-    ['ハリー・ポッターと炎のゴブレット 中', 'ハリー・ポッターと炎のゴブレット', 2],
-    ['ハリー・ポッターと炎のゴブレット 下', 'ハリー・ポッターと炎のゴブレット', 3],
-    ['ハリー・ポッターと炎のゴブレット　下', 'ハリー・ポッターと炎のゴブレット', 3],
+    ['西の魔女が死んだ 上', '西の魔女が死んだ', 1],
+    ['西の魔女が死んだ 下', '西の魔女が死んだ', 2],
+    ['西の魔女が死んだ　下', '西の魔女が死んだ', 2],
+    ['三つの国のものがたり 中', '三つの国のものがたり', 2],
     ['ねこ 上巻', 'ねこ', 1],
-    ['ねこ下巻', 'ねこ', 3],
+    ['ねこ下巻', 'ねこ', 2],
     ['ねこ 前編', 'ねこ', 1],
     ['ねこ 後篇', 'ねこ', 2],
   ])('%s', (title, name, vol) => {
     expect(guessSeries(title)).toEqual(S(name, vol));
+  });
+
+  it('guessSeriesDetail は上・中・下などの位置も返す', () => {
+    expect(guessSeriesDetail('西の魔女が死んだ 下')).toEqual({ seriesName: '西の魔女が死んだ', volume: 2, position: '下' });
+    expect(guessSeriesDetail('ねこ（中）')).toEqual({ seriesName: 'ねこ', volume: 2, position: '中' });
+    expect(guessSeriesDetail('ねこ 後編')).toEqual({ seriesName: 'ねこ', volume: 2, position: '後' });
+    expect(guessSeriesDetail('ねこ 2')).toEqual({ seriesName: 'ねこ', volume: 2, position: null });
+    expect(guessSeriesDetail('ぐりとぐら')).toEqual({ seriesName: null, volume: null, position: null });
   });
 
   it('タイトルの一部の「上」「下」は巻数にしない', () => {
@@ -175,6 +188,10 @@ describe('guessSeries: 誤検出しない', () => {
     'ゴルゴ13',
     '2001年宇宙の旅',
     'ちいさなかがくのとも 2024年5月号',
+    'こどものとも 第456号',
+    'こどものとも (第456号)',
+    'こどものとも 第四五六号',
+    'かがくのとも 通巻456号',
     'かずのえほん 1 2 3',
     '日本の祭り 2024',
     'ねこ 0',
@@ -221,7 +238,9 @@ describe('parseVolume', () => {
     ['十二', 12],
     ['上', 1],
     ['中巻', 2],
-    ['下', 3],
+    ['下', 2],
+    ['下巻', 2],
+    ['(下)', 2],
     ['前編', 1],
     ['後編', 2],
     ['③', 3],
@@ -235,13 +254,74 @@ describe('parseVolume', () => {
     expect(parseVolume(text)).toBe(vol);
   });
 
-  it.each(['', '1-3', '1〜3', '0', '2024', '新装版', 'あ', '上下'])('%s → null', (text) => {
+  it.each(['', '1-3', '1〜3', '0', '2024', '新装版', 'あ', '上下', '第5号', '456号'])('%s → null', (text) => {
     expect(parseVolume(text)).toBeNull();
   });
 
   it('null / undefined', () => {
     expect(parseVolume(null)).toBeNull();
     expect(parseVolume(undefined)).toBeNull();
+  });
+});
+
+describe('parseVolumePosition / titleVolumePosition', () => {
+  it.each([
+    ['上', '上'],
+    ['中巻', '中'],
+    ['下', '下'],
+    ['（下）', '下'],
+    ['前編', '前'],
+    ['後篇', '後'],
+    ['2', null],
+    ['', null],
+  ])('parseVolumePosition(%s) → %s', (text, pos) => {
+    expect(parseVolumePosition(text)).toBe(pos);
+  });
+
+  it.each([
+    ['西の魔女が死んだ 下', '下'],
+    ['西の魔女が死んだ（下）', '下'],
+    ['ねこ下巻', '下'],
+    ['三つの国のものがたり 中', '中'],
+    ['ねこ 後編', '後'],
+    ['ねこ 2', null],
+    ['ちかてつのちか 地下', null],
+    ['木の上', null],
+  ])('titleVolumePosition(%s) → %s', (title, pos) => {
+    expect(titleVolumePosition(title)).toBe(pos);
+  });
+});
+
+describe('resolvePositionVolume', () => {
+  const b = (title: string, volume: number | null) => ({ title, volume });
+
+  it('上下 2 冊組の「下」は 2 のまま', () => {
+    expect(resolvePositionVolume(b('西の魔女が死んだ 下', 2), [b('西の魔女が死んだ 上', 1)])).toBe(2);
+    expect(resolvePositionVolume(b('西の魔女が死んだ 下', 2), [])).toBe(2);
+  });
+
+  it('同じシリーズに「中」があれば「下」は 3', () => {
+    const siblings = [b('三つの国のものがたり 上', 1), b('三つの国のものがたり 中', 2)];
+    expect(resolvePositionVolume(b('三つの国のものがたり 下', 2), siblings)).toBe(3);
+    expect(resolvePositionVolume(b('三つの国のものがたり（下）', 2), [b('三つの国のものがたり（中）', 2)])).toBe(3);
+  });
+
+  it('タイトルに位置が無くても position を渡せば使う', () => {
+    expect(resolvePositionVolume({ title: '炎のゴブレット', volume: 2, position: '下' }, [{ title: '炎のゴブレット', volume: 2, position: '中' }])).toBe(3);
+  });
+
+  it('「下」以外・巻数が 2 でない（手で直した）本は変えない', () => {
+    const siblings = [b('ねこ 中', 2)];
+    expect(resolvePositionVolume(b('ねこ 上', 1), siblings)).toBe(1);
+    expect(resolvePositionVolume(b('ねこ 中', 2), siblings)).toBe(2);
+    expect(resolvePositionVolume(b('ねこ 下', 5), siblings)).toBe(5);
+    expect(resolvePositionVolume(b('ねこ 下', null), siblings)).toBeNull();
+    expect(resolvePositionVolume(b('ねこ 2', 2), siblings)).toBe(2);
+  });
+
+  it('自分自身は「中」の判定に使わない', () => {
+    const self = b('ねこ 下', 2);
+    expect(resolvePositionVolume(self, [self])).toBe(2);
   });
 });
 

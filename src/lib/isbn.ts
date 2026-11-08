@@ -6,14 +6,39 @@
 /** ハイフン・空白として読み飛ばす文字（全角・各種ダッシュ含む） */
 const SEPARATORS_RE = /[\s　\-‐‑‒–—―−－ｰー_]/g;
 
-/** 全角英数字などを半角にし、区切り文字と「ISBN」の接頭辞を取り除く */
-function compact(input: string): string {
-  return input
-    .normalize('NFKC')
-    .trim()
-    .replace(/^isbn(?:[-\s]?1[03])?\s*[:：]?\s*/i, '')
-    .replace(SEPARATORS_RE, '')
-    .toUpperCase();
+/** 「ISBN」「ISBN-13:」「isbn10」などの接頭辞（label は 10／13） */
+const PREFIX_RE = /^isbn(?<label>[-\s]?1[03])?\s*[:：]?\s*/i;
+/** 「ISBN」と区切り・コロンだけ（10／13 は残す） */
+const BARE_PREFIX_RE = /^isbn\s*[:：]?\s*/i;
+
+function stripSeparators(s: string): string {
+  return s.replace(SEPARATORS_RE, '').toUpperCase();
+}
+
+/**
+ * 全角英数字などを半角にし、区切り文字と「ISBN」の接頭辞を取り除いた候補。
+ * 「ISBN 1338878921」の 13 は ISBN-10 の先頭の数字のこともあるので、
+ * 接頭辞の後ろの 10／13 を取り除いたものと残したものの両方を返す（桁数が違うので両方が正しい ISBN になることはない）。
+ */
+function compactCandidates(input: string): string[] {
+  const s = input.normalize('NFKC').trim();
+  const m = PREFIX_RE.exec(s);
+  if (!m) return [stripSeparators(s)];
+  const out = [stripSeparators(s.slice(m[0].length))];
+  if (m.groups?.label) out.push(stripSeparators(s.replace(BARE_PREFIX_RE, '')));
+  return out;
+}
+
+/** 区切りを除いた 10／13 桁を ISBN-13 にする。不正なら null */
+function fromCompact(code: string): string | null {
+  if (code.length === 13) {
+    return isBookEan(code) ? code : null;
+  }
+  if (code.length === 10 && isValidIsbn10(code)) {
+    const first12 = `978${code.slice(0, 9)}`;
+    return `${first12}${ean13CheckDigit(first12)}`;
+  }
+  return null;
 }
 
 /** 先頭 12 桁から EAN-13 のチェックディジットを計算する */
@@ -48,13 +73,9 @@ function isValidIsbn10(code: string): boolean {
  */
 export function normalizeIsbn(input: string): string | null {
   if (typeof input !== 'string') return null;
-  const code = compact(input);
-  if (code.length === 13) {
-    return isBookEan(code) ? code : null;
-  }
-  if (code.length === 10 && isValidIsbn10(code)) {
-    const first12 = `978${code.slice(0, 9)}`;
-    return `${first12}${ean13CheckDigit(first12)}`;
+  for (const code of compactCandidates(input)) {
+    const isbn = fromCompact(code);
+    if (isbn) return isbn;
   }
   return null;
 }

@@ -7,12 +7,15 @@ import {
   collection,
   deleteDoc,
   doc,
+  limit,
   onSnapshot,
+  orderBy,
   query,
   serverTimestamp,
   updateDoc,
   where,
   writeBatch,
+  type QueryConstraint,
   type Unsubscribe,
 } from 'firebase/firestore';
 import { db } from '../firebase';
@@ -200,10 +203,64 @@ export function useActiveLoans(): QueryResult<WithId<Loan>[]> {
   return useMemo(() => ({ ...result, data: sortLoansByDue(result.data) }), [result]);
 }
 
-/** 全件（借りた日の新しい順） */
+/**
+ * 全件（借りた日の新しい順）。件数に比例して読み取りが増えるため（30 分以上空けて開き直すたびに全件分）、
+ * 全件が本当に必要な場所（シリーズ一覧の集計、履歴の全期間の検索・絞り込み）だけで使う。
+ */
 export function useAllLoans(): QueryResult<WithId<Loan>[]> {
   const { groupId } = useRequiredGroup();
   const result = useSubscription(`allLoans/${groupId}`, querySubscriber<Loan>(loansCol(groupId)), EMPTY_LIST);
+  return useMemo(() => ({ ...result, data: sortLoansByBorrowedDesc(result.data) }), [result]);
+}
+
+/**
+ * 履歴画面で読む範囲。
+ *   - recent: 借りた日の新しい順に count 件だけ（最初に開いたとき。条件が無ければ一覧の 1 ページ分で足りる）
+ *   - range:  借りた日が from〜to の記録（期間で絞り込んだとき。null は制限なし）
+ *   - all:    全件（全期間の検索・絞り込み、「もっと見る」）
+ * どれも単一フィールド（borrowedOn）の条件・並べ替えだけなので、複合インデックスは要らない。
+ */
+export type HistoryScope =
+  | { kind: 'recent'; count: number }
+  | { kind: 'range'; from: DateString | null; to: DateString | null }
+  | { kind: 'all' };
+
+/** 範囲の比較用のキー（同じ範囲なら同じ文字列） */
+export function historyScopeKey(scope: HistoryScope): string {
+  switch (scope.kind) {
+    case 'recent':
+      return `recent:${scope.count}`;
+    case 'range':
+      return `range:${scope.from ?? ''}:${scope.to ?? ''}`;
+    case 'all':
+      return 'all';
+  }
+}
+
+function historyConstraints(scope: HistoryScope): QueryConstraint[] {
+  switch (scope.kind) {
+    case 'recent':
+      return [orderBy('borrowedOn', 'desc'), limit(scope.count)];
+    case 'range': {
+      const out: QueryConstraint[] = [];
+      if (scope.from) out.push(where('borrowedOn', '>=', scope.from));
+      if (scope.to) out.push(where('borrowedOn', '<=', scope.to));
+      return out;
+    }
+    case 'all':
+      return [];
+  }
+}
+
+/** 履歴画面用。scope の範囲の貸出記録（借りた日の新しい順） */
+export function useHistoryLoans(scope: HistoryScope): QueryResult<WithId<Loan>[]> {
+  const { groupId } = useRequiredGroup();
+  const scopeKey = historyScopeKey(scope);
+  const result = useSubscription(
+    `historyLoans/${groupId}/${scopeKey}`,
+    querySubscriber<Loan>(query(loansCol(groupId), ...historyConstraints(scope))),
+    EMPTY_LIST,
+  );
   return useMemo(() => ({ ...result, data: sortLoansByBorrowedDesc(result.data) }), [result]);
 }
 

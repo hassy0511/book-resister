@@ -3,7 +3,11 @@
  *
  * ガード:
  *   - Firebase 未設定 → すべての画面で SetupRequired
- *   - 未ログイン → /login（/join/:code から来た場合は sessionStorage 'returnTo' に保存し、ログイン後に戻す）
+ *   - 未ログイン → /login（/join/:code から来た場合は sessionStorage 'returnTo' に保存し、ログイン後に戻す。
+ *     戻り先は /login?next=/join/... として URL にも載せる。アプリ内ブラウザから Safari に移ると
+ *     sessionStorage は引き継がれないため）
+ *   - LINE などのアプリ内ブラウザで /join/:code を未ログインで開いた → /login へ移る前に「Safari で開いて」と案内する
+ *     （アドレス欄に招待リンクが残るので、メニューの「Safari で開く」でそのまま参加の画面へ進める）
  *   - ログイン済みで /login → returnTo か "/" へ（ログイン画面側で遷移させる必要はない）
  *   - ログイン済みでグループ未参加 → /welcome（/join/:code と /welcome 自身は除く）
  *   - 認証・グループの読み込み中はスプラッシュ
@@ -21,6 +25,10 @@ import { ErrorBoundary } from './components/layout/ErrorBoundary';
 import { SetupRequired } from './components/layout/SetupRequired';
 import { SplashScreen } from './components/layout/SplashScreen';
 import { ErrorState } from './components/ui/EmptyState';
+import { Button } from './components/ui/Button';
+import { Page } from './components/ui/Page';
+import { InAppBrowserNotice } from './components/InAppBrowserNotice';
+import { detectInAppBrowser, type InAppBrowserName } from './components/inAppBrowser';
 import { isPermissionDenied } from './data/common';
 
 // 画面は分割して読み込む
@@ -85,6 +93,17 @@ function shouldRememberPath(pathname: string): boolean {
   return pathname.startsWith('/join/');
 }
 
+/** /login?next=… の戻り先（アプリ内の招待リンクだけを認める）。無ければ null */
+function nextFromSearch(search: string): string | null {
+  let next: string | null;
+  try {
+    next = new URLSearchParams(search).get('next');
+  } catch {
+    return null;
+  }
+  return isSafeReturnTo(next) && shouldRememberPath(next) ? next : null;
+}
+
 // ---------------------------------------------------------------------------
 // ガード
 // ---------------------------------------------------------------------------
@@ -100,10 +119,31 @@ function RequireAuth() {
 function RedirectToLogin() {
   const location = useLocation();
   const path = `${location.pathname}${location.search}`;
+  const remember = shouldRememberPath(location.pathname);
+  // 招待リンクをアプリ内ブラウザで開いた場合は、先に Safari で開き直すよう案内する
+  const [inAppBrowser] = useState(() => (remember ? detectInAppBrowser() : null));
+  const [proceed, setProceed] = useState(false);
   useEffect(() => {
-    if (shouldRememberPath(location.pathname)) saveReturnTo(path);
-  }, [location.pathname, path]);
-  return <Navigate to="/login" replace />;
+    if (remember) saveReturnTo(path);
+  }, [remember, path]);
+  if (inAppBrowser && !proceed) {
+    return <InAppBrowserGate appName={inAppBrowser} onContinue={() => setProceed(true)} />;
+  }
+  return <Navigate to={remember ? `/login?next=${encodeURIComponent(path)}` : '/login'} replace />;
+}
+
+/** アプリ内ブラウザで招待リンクを開いたときの案内（アドレス欄は招待リンクのまま） */
+function InAppBrowserGate({ appName, onContinue }: { appName: InAppBrowserName; onContinue: () => void }) {
+  return (
+    <Page title="家族のグループへの招待">
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)', maxWidth: 440, margin: '0 auto' }}>
+        <InAppBrowserNotice appName={appName} />
+        <Button variant="ghost" block onClick={onContinue}>
+          このままメールアドレスでログインする
+        </Button>
+      </div>
+    </Page>
+  );
 }
 
 /** グループ未参加なら /welcome へ */
@@ -142,14 +182,22 @@ function GroupLoadError({ error }: { error: Error }) {
 /** /login: ログイン済みなら戻り先（無ければ "/"）へ */
 function LoginRoute() {
   const { user, loading } = useAuth();
+  const location = useLocation();
+  // URL の戻り先（/login?next=/join/...）を sessionStorage にも入れる。ログイン画面の「招待リンクから開きました」
+  // の表示と、ログイン後の移動に使う。最初の描画で 1 回だけ（同じ値を書くだけなので二重描画でも問題ない）
+  const [next] = useState(() => {
+    const value = nextFromSearch(location.search);
+    if (value) saveReturnTo(value);
+    return value;
+  });
   if (loading) return <SplashScreen />;
-  if (user) return <RedirectAfterLogin />;
+  if (user) return <RedirectAfterLogin fallback={next} />;
   return <LoginPage />;
 }
 
-function RedirectAfterLogin() {
+function RedirectAfterLogin({ fallback }: { fallback: string | null }) {
   // 描画中は読むだけにして、消すのはエフェクトで（StrictMode の二重描画でも戻り先を失わない）
-  const [target] = useState(() => readReturnTo() ?? '/');
+  const [target] = useState(() => readReturnTo() ?? fallback ?? '/');
   useEffect(() => {
     clearReturnTo();
   }, []);

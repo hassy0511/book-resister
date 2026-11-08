@@ -353,9 +353,15 @@ function JoinGuideStep({ onBack }: { onBack: () => void }) {
             <span className={styles.guideNum} aria-hidden="true">
               2
             </span>
-            <p>
-              届いたリンクを<strong>タップして開きます</strong>。参加の確認画面が表示されるので「参加する」を押します。
-            </p>
+            <div>
+              <p>
+                届いたリンクを<strong>タップして開きます</strong>。参加の確認画面が表示されるので「参加する」を押します。
+              </p>
+              <p className={styles.guideSub}>
+                iPhone では Safari で開いてください。LINE などのアプリの中で開いた場合は、画面のメニューから「Safari
+                で開く」を選びます（アプリの中では Google でログインできません）。
+              </p>
+            </div>
           </li>
         </ol>
         <p className={styles.guideNote}>

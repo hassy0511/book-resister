@@ -1,6 +1,7 @@
 /*
  * シリーズ詳細（/series/:seriesId, F-72〜74）。
  *   - 巻ごとの状態（読んだ / 途中まで / 読んでいない / 貸出中 / まだ借りていない）を色とアイコンで表示
+ *     （貸出中でも、前に「読んだ」で返した巻は読んだ印を添える。要約の「読んだ N巻」にも数える）
  *     （マス目と一覧を切り替え。借りた巻はタップで本の詳細へ。同じ巻に複数の本があれば選ぶ）
  *   - 「まだ借りていない巻」（全巻数があるとき）／「抜けている巻」（無いとき）の要約
  *   - 巻数が未設定の本は「巻数なし」に分けて表示
@@ -65,6 +66,16 @@ const VOLUME_STATE_TEXT: Record<BookReadState, string> = {
 };
 
 const LEGEND_ORDER: BookReadState[] = ['read', 'partial', 'unread', 'reading', 'none'];
+
+/** 前に「読んだ」で返した巻・本を、読み返すためにもう一度借りている（貸出中の色に読んだ印を添える） */
+function rereading(item: { state: BookReadState; everRead: boolean }): boolean {
+  return item.state === 'reading' && item.everRead;
+}
+
+/** 巻・本の状態の表示名（貸出中でも前に読んでいれば、そのことを添える） */
+function stateText(item: { state: BookReadState; everRead: boolean }): string {
+  return rereading(item) ? '貸出中（前に読んだ）' : VOLUME_STATE_TEXT[item.state];
+}
 
 const STATE_CLASS: Record<BookReadState, string | undefined> = {
   read: styles.stateRead,
@@ -244,7 +255,7 @@ function SeriesDetailView({ series, books, loans }: SeriesDetailViewProps) {
               {viewMode === 'grid' ? (
                 <>
                   <VolumeGrid slots={overview.slots} onPick={openPick} />
-                  <Legend counts={overview.stateCounts} />
+                  <Legend counts={overview.stateCounts} showRereadNote={overview.slots.some(rereading)} />
                 </>
               ) : (
                 <VolumeList slots={overview.slots} />
@@ -396,7 +407,7 @@ function SummaryCard({
 
 function slotLabel(slot: VolumeSlot<SeriesBook>): string {
   const multi = slot.books.length > 1 ? `、${slot.books.length}冊あります` : '';
-  return `${slot.volume}巻 ${VOLUME_STATE_TEXT[slot.state]}${multi}`;
+  return `${slot.volume}巻 ${stateText(slot)}${multi}`;
 }
 
 function VolumeGrid({
@@ -416,6 +427,11 @@ function VolumeGrid({
             <span className={styles.cellIcon} aria-hidden="true">
               <StateIcon state={slot.state} size={14} />
             </span>
+            {rereading(slot) ? (
+              <span className={styles.cellReadMark} aria-hidden="true">
+                <CheckIcon size={12} strokeWidth={3.5} />
+              </span>
+            ) : null}
             {slot.books.length > 1 ? (
               <span className={styles.cellMulti} aria-hidden="true">
                 {slot.books.length}
@@ -449,19 +465,29 @@ function VolumeGrid({
   );
 }
 
-function Legend({ counts }: { counts: Record<BookReadState, number> }) {
+function Legend({ counts, showRereadNote }: { counts: Record<BookReadState, number>; showRereadNote: boolean }) {
   return (
-    <ul className={styles.legend} aria-label="色の意味と巻数">
-      {LEGEND_ORDER.map((state) => (
-        <li key={state} className={styles.legendItem}>
-          <span className={[styles.swatch, STATE_CLASS[state]].filter(Boolean).join(' ')} aria-hidden="true">
-            <StateIcon state={state} size={12} />
+    <>
+      <ul className={styles.legend} aria-label="色の意味と巻数">
+        {LEGEND_ORDER.map((state) => (
+          <li key={state} className={styles.legendItem}>
+            <span className={[styles.swatch, STATE_CLASS[state]].filter(Boolean).join(' ')} aria-hidden="true">
+              <StateIcon state={state} size={12} />
+            </span>
+            {VOLUME_STATE_TEXT[state]}
+            <span className={styles.legendCount}>{counts[state]}</span>
+          </li>
+        ))}
+      </ul>
+      {showRereadNote ? (
+        <p className={styles.legendNote}>
+          <span className={styles.legendReadMark} aria-hidden="true">
+            <CheckIcon size={10} strokeWidth={3.5} />
           </span>
-          {VOLUME_STATE_TEXT[state]}
-          <span className={styles.legendCount}>{counts[state]}</span>
-        </li>
-      ))}
-    </ul>
+          の付いた貸出中の巻は、前に読んだ巻です（上の「読んだ」の巻数に入っています）。
+        </p>
+      ) : null}
+    </>
   );
 }
 
@@ -470,7 +496,7 @@ function Legend({ counts }: { counts: Record<BookReadState, number> }) {
 // ---------------------------------------------------------------------------
 
 type ListEntry =
-  | { kind: 'book'; volume: number; info: SeriesBookInfo<SeriesBook>; state: BookReadState }
+  | { kind: 'book'; volume: number; info: SeriesBookInfo<SeriesBook> }
   | { kind: 'gap'; from: number; to: number };
 
 /** 本のある巻は本ごとの行に、本の無い巻は連続をまとめた 1 行にする */
@@ -484,7 +510,7 @@ function listEntries(slots: VolumeSlot<SeriesBook>[]): ListEntry[] {
       if (end !== undefined) out.push({ kind: 'gap', from: slot.volume, to: end });
       continue;
     }
-    for (const info of slot.books) out.push({ kind: 'book', volume: slot.volume, info, state: info.state });
+    for (const info of slot.books) out.push({ kind: 'book', volume: slot.volume, info });
   }
   return out;
 }
@@ -508,7 +534,7 @@ function VolumeList({ slots }: { slots: VolumeSlot<SeriesBook>[] }) {
                 <span className={styles.volMain}>
                   <span className={styles.volTitle}>{e.info.book.title}</span>
                   <span className={styles.volSub}>
-                    <StateBadge state={e.state} />
+                    <StateBadge state={e.info.state} everRead={e.info.everRead} />
                     {e.info.lastBorrowedOn ? <span>{formatDate(e.info.lastBorrowedOn)}に借りた</span> : null}
                   </span>
                 </span>
@@ -522,11 +548,13 @@ function VolumeList({ slots }: { slots: VolumeSlot<SeriesBook>[] }) {
   );
 }
 
-function StateBadge({ state }: { state: BookReadState }) {
+function StateBadge({ state, everRead }: { state: BookReadState; everRead: boolean }) {
+  const item = { state, everRead };
   return (
     <span className={[styles.stateBadge, STATE_CLASS[state]].filter(Boolean).join(' ')}>
       <StateIcon state={state} size={12} />
-      {VOLUME_STATE_TEXT[state]}
+      {stateText(item)}
+      {rereading(item) ? <CheckIcon size={12} strokeWidth={3} /> : null}
     </span>
   );
 }
@@ -538,7 +566,7 @@ function BookInfoRow({ info }: { info: SeriesBookInfo<SeriesBook> }) {
       title={info.book.title}
       subtitle={
         <span className={styles.volSub}>
-          <StateBadge state={info.state} />
+          <StateBadge state={info.state} everRead={info.everRead} />
           {info.lastBorrowedOn ? <span>{formatDate(info.lastBorrowedOn)}に借りた</span> : null}
         </span>
       }

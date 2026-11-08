@@ -13,10 +13,12 @@ const {
   isLocationFormChanged,
   locationSummary,
   pushStateLabel,
+  shareableInviteUrl,
   splitLocations,
   validateLoanDays,
   validateLocationForm,
 } = await import('./settingsLogic');
+const { parseInviteInput } = await import('../auth/authLogic');
 
 describe('validateLocationForm', () => {
   const ok = { name: '中央図書館', defaultLoanDays: 14, memo: '' };
@@ -107,6 +109,25 @@ describe('招待', () => {
     expect(text).toContain('「山田家」');
     expect(text).toContain('11月15日(日)まで有効');
     expect(inviteShareText('  ', '2026-11-15', '2026-11-08')).toContain('「家族のグループ」');
+  });
+
+  it('共有の文面で、iPhone は Safari で開くよう伝える', () => {
+    expect(inviteShareText('山田家', '2026-11-15', '2026-11-08')).toContain('iPhone では Safari で開いてください');
+  });
+
+  it('shareableInviteUrl は LINE で外部ブラウザを開くパラメータを付ける', () => {
+    expect(shareableInviteUrl('https://example.web.app/join/AbCd')).toBe(
+      'https://example.web.app/join/AbCd?openExternalBrowser=1',
+    );
+    expect(shareableInviteUrl('/join/AbCd')).toBe('/join/AbCd?openExternalBrowser=1');
+    expect(shareableInviteUrl('/join/AbCd?x=1')).toBe('/join/AbCd?x=1&openExternalBrowser=1');
+    expect(shareableInviteUrl('https://example.web.app/join/AbCd?openExternalBrowser=1')).toBe(
+      'https://example.web.app/join/AbCd?openExternalBrowser=1',
+    );
+    // 参加の画面のコードの取り出しは、パラメータが付いていても変わらない
+    expect(parseInviteInput(shareableInviteUrl('https://example.web.app/join/AbCdEfGhIjKlMnOpQrStUv'))).toBe(
+      'AbCdEfGhIjKlMnOpQrStUv',
+    );
   });
 });
 

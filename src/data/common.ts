@@ -57,7 +57,7 @@ export function dataErrorMessage(e: unknown): string {
     case 'not-found':
       return 'データが見つかりませんでした。削除された可能性があります。';
     case 'resource-exhausted':
-      return '利用量の上限に達しました。しばらく時間をおいてお試しください。';
+      return '利用量の上限（無料枠）に達しました。日本時間の 17 時ごろ（米国の夏時間の間は 16 時ごろ）に元に戻ります。';
     case 'failed-precondition':
       return 'データの状態が変わったため処理できませんでした。画面を開き直してください。';
     case 'invalid-argument':
@@ -190,23 +190,56 @@ export function querySubscriber<T>(q: Query): Subscriber<WithId<T>[]> {
 /**
  * ドキュメントを購読する購読関数。存在しなければ null。
  * キャッシュに無いだけ（オフライン・初回）の「存在しない」はサーバーの応答を待つ。
+ * opts.missingAfterMs を指定すると、待つのはその時間まで（オフラインなら待たない）。
+ * その後サーバーから届いた内容はそのまま反映する。
  */
-export function docSubscriber<T>(ref: DocumentReference): Subscriber<WithId<T> | null> {
-  return (next, fail) =>
-    onSnapshot(
+export function docSubscriber<T>(
+  ref: DocumentReference,
+  opts: { missingAfterMs?: number } = {},
+): Subscriber<WithId<T> | null> {
+  return (next, fail) => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const stopTimer = () => {
+      if (timer !== undefined) clearTimeout(timer);
+      timer = undefined;
+    };
+    const unsubscribe = onSnapshot(
       ref,
       { includeMetadataChanges: true },
       (snap) => {
         if (!snap.exists()) {
           // キャッシュに無いだけなら待つ（この端末で削除した直後は待たない）
-          if (snap.metadata.fromCache && !snap.metadata.hasPendingWrites) return;
+          if (snap.metadata.fromCache && !snap.metadata.hasPendingWrites) {
+            const wait = opts.missingAfterMs;
+            if (wait === undefined) return;
+            if (isOffline()) {
+              stopTimer();
+              next(null);
+            } else if (timer === undefined) {
+              timer = setTimeout(() => {
+                timer = undefined;
+                next(null);
+              }, wait);
+            }
+            return;
+          }
+          stopTimer();
           next(null);
           return;
         }
+        stopTimer();
         next(docWithId<T>(snap));
       },
-      fail,
+      (e) => {
+        stopTimer();
+        fail(e);
+      },
     );
+    return () => {
+      stopTimer();
+      unsubscribe();
+    };
+  };
 }
 
 /**
@@ -365,7 +398,12 @@ export function compareJa(a: string, b: string): number {
 
 /** サーバーの応答を待つ最大時間。これを過ぎたら端末に保存済みとして先へ進む */
 const WRITE_WAIT_MS = 4000;
-/** 応答待ちがタイムアウトした後、この時間は待たずに進む（電波が弱い場所で何度も待たせない） */
+/**
+ * オフラインのときや、電波が弱くて待たない期間に待つ時間。
+ * サーバーの応答は来ないが、端末の中ですぐに返る失敗（ルールより前の拒否など）は拾う。
+ */
+const SHORT_WAIT_MS = 50;
+/** 応答待ちがタイムアウトした後、この時間は長くは待たずに進む（電波が弱い場所で何度も待たせない） */
 const SLOW_NETWORK_COOLDOWN_MS = 30_000;
 let skipWaitUntil = 0;
 
@@ -374,34 +412,102 @@ function isOffline(): boolean {
 }
 
 /**
+ * 書き込みの結果。
+ *   - 'confirmed': サーバーが保存した（待ち時間内に応答があった）
+ *   - 'local': 端末に保存しただけ（オフライン・電波が弱い。電波のよい所でアプリを開くと送信される）
+ */
+export type WriteOutcome = 'confirmed' | 'local';
+
+export interface SettleOptions {
+  /**
+   * 失敗として扱わないエラー（true を返すと、待ち時間内なら 'confirmed' として返し、後から届いても通知しない）。
+   * 例: 決まった ID の作成が、別の端末の作成と重なって拒否された場合。
+   */
+  ignoreError?: (e: unknown) => boolean;
+}
+
+// ---- 後から届いた失敗の通知 ----
+
+/** 書き込み関数が完了を返した後に、サーバーが拒否した書き込みの通知を受け取る関数 */
+export type LateWriteFailureListener = (error: Error) => void;
+
+const lateFailureListeners = new Set<LateWriteFailureListener>();
+
+/**
+ * 端末に保存済みとして完了した書き込みが、後からサーバーに拒否されたときに呼ばれる関数を登録する。
+ * Firestore は拒否された変更を端末からも取り消すため、画面から黙って消えないよう利用者に知らせる。
+ * 解除する関数を返す。
+ */
+export function onLateWriteFailure(listener: LateWriteFailureListener): () => void {
+  lateFailureListeners.add(listener);
+  return () => {
+    lateFailureListeners.delete(listener);
+  };
+}
+
+/** 後から届いた失敗を利用者向けに説明する文 */
+export function lateWriteFailureMessage(error: Error): string {
+  return `保存できなかった変更があります（${error.message}）。内容を確かめて、もう一度入力してください。`;
+}
+
+function reportLateFailure(e: unknown): void {
+  const error = toDataError(e);
+  console.error('[data] 保存に失敗しました（端末に保存した後でサーバーに拒否されました）', e);
+  for (const listener of Array.from(lateFailureListeners)) {
+    try {
+      listener(error);
+    } catch (err) {
+      console.error('[data] 保存失敗の通知でエラーが発生しました', err);
+    }
+  }
+}
+
+/** 通知を受け取る購読フック（ToastProvider の内側で使う） */
+export function useLateWriteFailures(listener: LateWriteFailureListener): void {
+  const listenerRef = useRef(listener);
+  useEffect(() => {
+    listenerRef.current = listener;
+  });
+  useEffect(() => onLateWriteFailure((error) => listenerRef.current(error)), []);
+}
+
+/**
  * 書き込みの完了を待つ。Firestore は書き込みを端末に保存してから送信するため、
  * オフラインや電波が弱いときはサーバーの応答を待たずに完了扱いにする（後で自動送信される）。
- * 応答が早く返ってきた場合はエラー（権限など）をそのまま投げる。
+ * 待ち時間内に返ったエラー（権限など）は日本語の Error で投げる。
+ * 完了扱いにした後でサーバーに拒否された場合は onLateWriteFailure の登録先に知らせる。
  */
-export async function settleWrite(write: Promise<unknown>): Promise<void> {
-  const tracked = write.then(
+export async function settleWrite(write: Promise<unknown>, options: SettleOptions = {}): Promise<WriteOutcome> {
+  // 失敗も値として受け取る（待ち時間を過ぎた後の失敗が「未処理の拒否」にならないように）
+  const tracked: Promise<{ error: unknown } | null> = write.then(
     () => {
       skipWaitUntil = 0;
+      return null;
     },
     (e: unknown) => {
-      throw toDataError(e);
+      // 拒否でもサーバー（またはこの端末）から応答があったので、次からは待つ
+      skipWaitUntil = 0;
+      return options.ignoreError?.(e) === true ? null : { error: e };
     },
   );
-  if (isOffline() || Date.now() < skipWaitUntil) {
-    tracked.catch((e: unknown) => console.error('[data] 保存に失敗しました', e));
-    return;
-  }
+  const shortWait = isOffline() || Date.now() < skipWaitUntil;
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<'timeout'>((resolve) => {
-    timer = setTimeout(() => resolve('timeout'), WRITE_WAIT_MS);
+    timer = setTimeout(() => resolve('timeout'), shortWait ? SHORT_WAIT_MS : WRITE_WAIT_MS);
   });
+  let result: { error: unknown } | null | 'timeout';
   try {
-    const result = await Promise.race([tracked.then(() => 'done' as const), timeout]);
-    if (result === 'timeout') {
-      skipWaitUntil = Date.now() + SLOW_NETWORK_COOLDOWN_MS;
-      tracked.catch((e: unknown) => console.error('[data] 保存に失敗しました', e));
-    }
+    result = await Promise.race([tracked, timeout]);
   } finally {
     if (timer !== undefined) clearTimeout(timer);
   }
+  if (result !== 'timeout') {
+    if (result) throw toDataError(result.error);
+    return 'confirmed';
+  }
+  if (!shortWait) skipWaitUntil = Date.now() + SLOW_NETWORK_COOLDOWN_MS;
+  void tracked.then((late) => {
+    if (late) reportLateFailure(late.error);
+  });
+  return 'local';
 }

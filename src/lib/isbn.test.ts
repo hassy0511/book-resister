@@ -35,6 +35,20 @@ describe('normalizeIsbn', () => {
     expect(normalizeIsbn('isbn-13: 9784834000825')).toBe(GURI);
     expect(normalizeIsbn('ISBN 4-8340-0082-6')).toBe(GURI);
     expect(normalizeIsbn('ＩＳＢＮ４－８３４０－００８２－６')).toBe(GURI);
+    expect(normalizeIsbn('ISBN13 9784834000825')).toBe(GURI);
+    expect(normalizeIsbn('ISBN139784834000825')).toBe(GURI);
+    expect(normalizeIsbn('ISBN-10: 4834000826')).toBe(GURI);
+    expect(normalizeIsbn('ISBN 978‐4‐8340‐0082‐5')).toBe(GURI); // U+2010
+  });
+
+  it('「ISBN」の後ろが 10／13 で始まる ISBN-10 は、その数字を接頭辞として消さない', () => {
+    // Scholastic（1-338-…）など、英語圏の ISBN-10 は 10／13 で始まることがある
+    expect(normalizeIsbn('1338878921')).toBe('9781338878929');
+    expect(normalizeIsbn('ISBN 1338878921')).toBe('9781338878929');
+    expect(normalizeIsbn('ISBN1338878921')).toBe('9781338878929');
+    expect(normalizeIsbn('ISBN-10 1338878921')).toBe('9781338878929');
+    expect(normalizeIsbn('ISBN 1-338-87892-1')).toBe('9781338878929');
+    expect(normalizeIsbn('ISBN: 1338878921')).toBe('9781338878929');
   });
 
   it('ISBN-10 を ISBN-13 に変換する', () => {
@@ -45,6 +59,7 @@ describe('normalizeIsbn', () => {
   it('ISBN-10 のチェックディジット X（小文字も可）', () => {
     expect(normalizeIsbn('0-8044-2957-X')).toBe('9780804429573');
     expect(normalizeIsbn('080442957x')).toBe('9780804429573');
+    expect(normalizeIsbn('０８０４４２９５７Ｘ')).toBe('9780804429573');
   });
 
   it('979 で始まる ISBN', () => {

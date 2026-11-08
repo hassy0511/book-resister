@@ -18,13 +18,16 @@ import {
   compareJa,
   docSubscriber,
   isPermissionDenied,
+  lateWriteFailureMessage,
   noopSubscriber,
   querySubscriber,
   settleWrite,
   toDataError,
+  useLateWriteFailures,
   useSubscription,
 } from '../data/common';
 import { getInvite } from '../data/invites';
+import { useToast } from '../components/ui/ToastProvider';
 import { db } from '../firebase';
 import type { Group, Member, UserProfile, WithId } from '../types';
 
@@ -85,6 +88,18 @@ async function putUserProfile(batch: WriteBatch, uid: string, displayName: strin
   } else {
     batch.set(ref, { displayName, groupId, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
   }
+}
+
+/**
+ * 端末に保存済みとして完了した書き込みが、後からサーバーに拒否されたときのお知らせ。
+ * Firestore は拒否された変更を端末からも取り消すので、黙って消えないようにトーストで知らせる。
+ */
+function LateWriteFailureToast() {
+  const toast = useToast();
+  useLateWriteFailures((error) => {
+    toast.show(lateWriteFailureMessage(error), { tone: 'error', duration: 10_000 });
+  });
+  return null;
 }
 
 export function GroupProvider({ children }: { children: ReactNode }) {
@@ -226,7 +241,12 @@ export function GroupProvider({ children }: { children: ReactNode }) {
     [loading, profile, groupId, group, members, error, memberName, createGroup, joinGroup, updateDisplayName, updateGroupName],
   );
 
-  return <GroupContext.Provider value={value}>{children}</GroupContext.Provider>;
+  return (
+    <GroupContext.Provider value={value}>
+      <LateWriteFailureToast />
+      {children}
+    </GroupContext.Provider>
+  );
 }
 
 export function useGroup(): GroupContextValue {

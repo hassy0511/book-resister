@@ -220,6 +220,46 @@
   color: var(--color-info);
 }
 
+/* ISBN なしで登録した同じタイトルの本の確認 */
+.sameTitle {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+  flex: 1;
+}
+
+.sameTitleLead {
+  font-weight: var(--font-weight-bold);
+}
+
+.sameTitleBook {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-1);
+}
+
+.sameTitleName {
+  font-weight: var(--font-weight-medium);
+}
+
+.sameTitleMeta {
+  display: block;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-xs);
+}
+
+.sameTitleNo {
+  align-self: flex-start;
+  margin-left: calc(-1 * var(--space-2));
+}
+
+.sameTitleHelp {
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-xs);
+}
+
 .seriesNote {
   margin-top: calc(-1 * var(--space-2));
   color: var(--color-warning);

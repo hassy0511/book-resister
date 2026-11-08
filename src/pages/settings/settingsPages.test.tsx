@@ -341,9 +341,11 @@ describe('MembersPage', () => {
     renderAt('/settings/members');
     fireEvent.click(screen.getByRole('button', { name: '招待リンクを作る' }));
     await waitFor(() => expect(mocks.createInvite).toHaveBeenCalledWith('g1', '山田家', 'u1'));
-    await waitFor(() => expect(writeText).toHaveBeenCalledWith(url));
+    // LINE で開いたときに Safari などで開くパラメータを付けて送る
+    const shared = `${url}?openExternalBrowser=1`;
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith(shared));
     expect(await screen.findByText(/招待リンクをコピーしました/)).toBeTruthy();
-    expect((screen.getByLabelText(/招待リンク（/) as HTMLInputElement).value).toBe(url);
+    expect((screen.getByLabelText(/招待リンク（/) as HTMLInputElement).value).toBe(shared);
     expect(screen.getByRole('button', { name: '新しい招待リンクを作る' })).toBeTruthy();
   });
 
@@ -360,9 +362,10 @@ describe('MembersPage', () => {
     renderAt('/settings/members');
     fireEvent.click(screen.getByRole('button', { name: '招待リンクを作る' }));
     await waitFor(() => expect(share).toHaveBeenCalledTimes(1));
-    expect(share.mock.calls[0][0].url).toBe(url);
+    expect(share.mock.calls[0][0].url).toBe(`${url}?openExternalBrowser=1`);
     expect(share.mock.calls[0][0].text).toContain('山田家');
-    await waitFor(() => expect(writeText).toHaveBeenCalledWith(url));
+    expect(share.mock.calls[0][0].text).toContain('Safari で開いてください');
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith(`${url}?openExternalBrowser=1`));
 
     // 「共有する」ボタンから改めて共有シートを開ける
     fireEvent.click(screen.getByRole('button', { name: '共有する' }));
@@ -446,6 +449,45 @@ describe('NotificationsPage', () => {
     expect(within(guide).getAllByRole('listitem')).toHaveLength(5);
     expect(within(guide).getByText('「ホーム画面に追加」をタップ')).toBeTruthy();
     expect(screen.queryByRole('button', { name: '通知をオンにする' })).toBeNull();
+  });
+
+  it('ホーム画面の図のアプリ名は、ホーム画面に出る名前（かりた本）', async () => {
+    await renderWith('needs-install');
+    const guide = screen.getByRole('heading', { name: 'ホーム画面に追加する手順' }).closest('section') as HTMLElement;
+    expect(within(guide).getByText('かりた本')).toBeTruthy();
+    expect(within(guide).queryByText('かりた本ノート')).toBeNull();
+    // 普通の Safari ではアプリ内ブラウザの案内を出さない
+    expect(screen.queryByText(/の中のブラウザで開いています/)).toBeNull();
+  });
+
+  it('LINE の中のブラウザなら、先に Safari で開くよう伝える', async () => {
+    const spy = vi
+      .spyOn(navigator, 'userAgent', 'get')
+      .mockReturnValue(
+        'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 Safari Line/14.9.0',
+      );
+    try {
+      await renderWith('needs-install');
+      expect(screen.getByText(/いまは LINE の中のブラウザで開いています/)).toBeTruthy();
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('ブロックされていれば設定アプリでの手順を、ホーム画面に出る名前で案内する。削除して追加し直すのは最後', async () => {
+    mocks.ios = true;
+    await renderWith('denied');
+    expect(screen.getByText('通知がブロックされています')).toBeTruthy();
+    const guide = screen.getByRole('heading', { name: 'iPhone で通知を許可する手順' }).closest('section') as HTMLElement;
+    expect(within(guide).getByText('一覧から「かりた本」をタップ')).toBeTruthy();
+    expect(within(guide).queryByText(/かりた本ノート/)).toBeNull();
+    const trouble = within(guide).getByRole('heading', { name: '一覧に見つからないとき' }).nextElementSibling as HTMLElement;
+    const items = within(trouble).getAllByRole('listitem').map((li) => li.textContent ?? '');
+    expect(items).toHaveLength(3);
+    expect(items[0]).toContain('ホーム画面のアイコンの下に出ている名前');
+    expect(items[1]).toContain('ホーム画面のアイコンから開いているか');
+    expect(items[2]).toContain('それでも見つからないときだけ');
+    expect(items[2]).toContain('ログインと「通知をオンにする」をやり直す');
   });
 
   it('ブロックされていれば設定アプリでの手順を表示する', async () => {

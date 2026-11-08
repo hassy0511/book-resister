@@ -2,13 +2,17 @@
  * ログイン（/login）。F-01
  *   - Google でログイン（ポップアップ → 使えなければリダイレクト。AuthProvider 側で処理）
  *   - メールアドレス＋パスワード（ログイン／新規登録の切り替え、パスワード再設定メール）
+ *   - LINE などのアプリ内ブラウザで開いたときは「Safari で開いて」と案内し、Google のボタンは薄くして理由を添える
+ *     （隠さない。判定が外れた場合でも使えるように）
  * ログインに成功すると App.tsx の LoginRoute が戻り先（招待リンクなど）か "/" へ移動させる。
  */
-import { useState, type FormEvent } from 'react';
+import { useRef, useState, type FormEvent } from 'react';
 import { authErrorMessage, useAuth } from '../../auth/AuthProvider';
 import { Button, Card, Page, SegmentedControl, Sheet, TextField, useToast } from '../../components/ui';
 import type { SegmentOption } from '../../components/ui';
 import { AlertIcon, BookIcon, InfoIcon } from '../../components/ui/icons';
+import { InAppBrowserNotice } from '../../components/InAppBrowserNotice';
+import { detectInAppBrowser } from '../../components/inAppBrowser';
 import {
   MIN_PASSWORD_LENGTH,
   hasPendingInvite,
@@ -32,6 +36,8 @@ export default function LoginPage() {
   const toast = useToast();
 
   const [pendingInvite] = useState(() => hasPendingInvite());
+  // LINE などのアプリ内ブラウザでは Google のログインが拒否される。案内を出し、メールアドレスでのログインを勧める
+  const [inAppBrowser] = useState(() => detectInAppBrowser());
   const [mode, setMode] = useState<EmailAuthMode>('signin');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -40,6 +46,10 @@ export default function LoginPage() {
   const [formError, setFormError] = useState<string | null>(null);
   const [busy, setBusy] = useState<Busy>(null);
   const [resetOpen, setResetOpen] = useState(false);
+  // Google のログインの呼び出しごとの番号（キャンセルした後に前の呼び出しが終わっても画面を戻さないため）
+  const googleAttemptRef = useRef(0);
+  // Google の待ち中でも、メールアドレスでのログインはできるようにする（ホーム画面のアプリで戻ってこない場合など）
+  const emailBusy = busy === 'email';
 
   const changeMode = (next: EmailAuthMode) => {
     setMode(next);
@@ -49,20 +59,27 @@ export default function LoginPage() {
 
   const handleGoogle = async () => {
     if (busy) return;
+    const attempt = ++googleAttemptRef.current;
     setBusy('google');
     setFormError(null);
     try {
       await signInWithGoogle();
     } catch (e) {
-      setFormError(authErrorMessage(e));
+      if (attempt === googleAttemptRef.current) setFormError(authErrorMessage(e));
     } finally {
-      setBusy(null);
+      if (attempt === googleAttemptRef.current) setBusy((prev) => (prev === 'google' ? null : prev));
     }
+  };
+
+  /** Google の画面から戻ってこないときに、待つのをやめる（Firebase の処理は次のログインで取り消される） */
+  const cancelGoogle = () => {
+    googleAttemptRef.current += 1;
+    setBusy((prev) => (prev === 'google' ? null : prev));
   };
 
   const handleEmailSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (busy) return;
+    if (emailBusy) return;
     const errors: FieldErrors = {
       email: validateEmail(email) ?? undefined,
       password: validatePassword(password, mode) ?? undefined,
@@ -71,6 +88,8 @@ export default function LoginPage() {
     setFormError(null);
     if (errors.email || errors.password) return;
 
+    // Google の待ち中なら、そちらは待つのをやめる
+    googleAttemptRef.current += 1;
     setBusy('email');
     try {
       if (mode === 'signup') {
@@ -113,6 +132,8 @@ export default function LoginPage() {
           </Card>
         ) : null}
 
+        {inAppBrowser ? <InAppBrowserNotice appName={inAppBrowser} /> : null}
+
         {errorText ? (
           <div className={styles.error} role="alert">
             <AlertIcon size={20} className={styles.errorIcon} />
@@ -128,10 +149,22 @@ export default function LoginPage() {
           loading={busy === 'google'}
           disabled={busy !== null}
           onClick={handleGoogle}
-          className={styles.googleButton}
+          className={[styles.googleButton, inAppBrowser ? styles.googleDimmed : ''].filter(Boolean).join(' ')}
+          aria-describedby={inAppBrowser ? 'google-in-app-note' : undefined}
         >
           Google でログイン
         </Button>
+        {inAppBrowser ? (
+          <p id="google-in-app-note" className={styles.googleNote}>
+            {inAppBrowser} の中のブラウザでは、Google のログインは Google によって止められます（エラー 403）。Safari
+            で開き直すか、下のメールアドレスでログインしてください。
+          </p>
+        ) : null}
+        {busy === 'google' ? (
+          <Button variant="ghost" block onClick={cancelGoogle}>
+            キャンセル（Google の画面から戻ってこないとき）
+          </Button>
+        ) : null}
 
         <div className={styles.divider} role="separator">
           <span>または メールアドレスで</span>
@@ -142,7 +175,7 @@ export default function LoginPage() {
           value={mode}
           onChange={changeMode}
           options={MODE_OPTIONS}
-          disabled={busy !== null}
+          disabled={emailBusy}
           className={styles.modeSwitch}
         />
 
@@ -162,7 +195,7 @@ export default function LoginPage() {
               if (fieldErrors.email) setFieldErrors((prev) => ({ ...prev, email: undefined }));
             }}
             error={fieldErrors.email}
-            disabled={busy !== null}
+            disabled={emailBusy}
           />
           <TextField
             label="パスワード"
@@ -179,7 +212,7 @@ export default function LoginPage() {
             }}
             error={fieldErrors.password}
             hint={mode === 'signup' ? `${MIN_PASSWORD_LENGTH} 文字以上で決めてください` : undefined}
-            disabled={busy !== null}
+            disabled={emailBusy}
             trailing={
               <button
                 type="button"
@@ -196,8 +229,8 @@ export default function LoginPage() {
             type="submit"
             size="lg"
             block
-            loading={busy === 'email'}
-            disabled={busy !== null}
+            loading={emailBusy}
+            disabled={emailBusy}
             className={styles.submit}
           >
             {mode === 'signup' ? '登録してはじめる' : 'ログイン'}
@@ -205,7 +238,7 @@ export default function LoginPage() {
         </form>
 
         {mode === 'signin' ? (
-          <Button variant="ghost" block onClick={() => setResetOpen(true)} disabled={busy !== null}>
+          <Button variant="ghost" block onClick={() => setResetOpen(true)} disabled={emailBusy}>
             パスワードを忘れた場合
           </Button>
         ) : (

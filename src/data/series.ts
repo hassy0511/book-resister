@@ -1,19 +1,37 @@
 /**
  * シリーズ（groups/{gid}/series）。
+ * 新しく作るシリーズの ID は名前から決める（`seriesIdForName`）。2 台で同時に同じシリーズを作っても 1 つにまとまる。
+ * 名前を変えたシリーズと同じ名前のシリーズを作るときや、以前からあるシリーズはランダムな ID。
+ * それでも同じ名前のシリーズが 2 つできたら、シリーズの編集から mergeSeries でまとめられる。
  */
 import { useMemo } from 'react';
-import { collection, doc, getDocs, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore';
+import {
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  query,
+  serverTimestamp,
+  setDoc,
+  updateDoc,
+  where,
+  writeBatch,
+  type DocumentReference,
+} from 'firebase/firestore';
 import { db } from '../firebase';
 import { useRequiredGroup } from '../group/GroupProvider';
 import { findMatchingSeries, normalizeSeriesName } from '../lib/series';
 import type { Series, WithId } from '../types';
 import {
+  BATCH_LIMIT,
   EMPTY_LIST,
   TEXT_LIMITS,
+  chunk,
   clipText,
   compareJa,
   docSubscriber,
   docWithId,
+  isPermissionDenied,
   isValidDocId,
   noopSubscriber,
   querySubscriber,
@@ -26,6 +44,38 @@ import {
 
 function seriesCol(gid: string) {
   return collection(db, 'groups', gid, 'series');
+}
+
+function booksCol(gid: string) {
+  return collection(db, 'groups', gid, 'books');
+}
+
+// ---------------------------------------------------------------------------
+// 名前から決まる ID
+// ---------------------------------------------------------------------------
+
+const FNV64_OFFSET = 0xcbf29ce484222325n;
+const FNV64_PRIME = 0x100000001b3n;
+const MASK64 = 0xffffffffffffffffn;
+
+/** 文字列（UTF-8）の FNV-1a 64 ビットハッシュ（16 進 16 文字） */
+function fnv1a64(text: string): string {
+  let hash = FNV64_OFFSET;
+  for (const byte of new TextEncoder().encode(text)) {
+    hash ^= BigInt(byte);
+    hash = (hash * FNV64_PRIME) & MASK64;
+  }
+  return hash.toString(16).padStart(16, '0');
+}
+
+/**
+ * シリーズ名から決まるドキュメント ID（`s-` ＋ 正規化した名前のハッシュ 32 文字）。正規化すると空なら null。
+ * どの端末でも同じ名前なら同じ ID になる（normalizeSeriesName で比較するので表記の揺れも同じ ID）。
+ */
+export function seriesIdForName(name: string): string | null {
+  const key = normalizeSeriesName(name);
+  if (!key) return null;
+  return `s-${fnv1a64(key)}${fnv1a64(`series:${key}`)}`;
 }
 
 /** シリーズ名は書誌 API から自動で入ることもあるため、長すぎる場合はルールの上限に切り詰める */
@@ -89,10 +139,15 @@ export async function updateSeries(
   await settleWrite(updateDoc(doc(seriesCol(gid), id), { ...clean, updatedAt: serverTimestamp() }));
 }
 
-/** 同じ名前のシリーズを同時に作らないための実行中の処理 */
+/** 同じ名前のシリーズを同時に作らないための実行中の処理（この端末の中） */
 const inflight = new Map<string, Promise<string>>();
 
-/** 名前（normalizeSeriesName で比較）が一致する既存シリーズの ID を返す。無ければ作成する */
+/**
+ * 名前（normalizeSeriesName で比較）が一致する既存シリーズの ID を返す。無ければ作成する。
+ * 新しく作るときは名前から決まる ID（seriesIdForName）を使うので、別の端末が同時に同じシリーズを作っても
+ * 同じ ID にまとまる（後から届いた作成はルールで拒否されるが、ID は同じなので成功とみなす）。
+ * その ID のシリーズが別の名前に変えられていたら、ランダムな ID で作る。
+ */
 export function findOrCreateSeries(gid: string, name: string): Promise<string> {
   let cleaned: string;
   try {
@@ -115,7 +170,20 @@ export function findOrCreateSeries(gid: string, name: string): Promise<string> {
     }
     const found = findMatchingSeries(cleaned, list);
     if (found) return found.id;
-    return createSeries(gid, cleaned, null);
+    const id = seriesIdForName(cleaned);
+    // 名前から決まる ID のシリーズが、別の名前に変えられて残っている
+    if (id === null || list.some((s) => s.id === id)) return createSeries(gid, cleaned, null);
+    await settleWrite(
+      setDoc(doc(seriesCol(gid), id), {
+        name: cleaned,
+        totalVolumes: null,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      }),
+      // 別の端末が先に同じ ID で作っていると、この作成は更新として扱われてルールで拒否される（ID は同じなので問題ない）
+      { ignoreError: isPermissionDenied },
+    );
+    return id;
   })();
   inflight.set(key, task);
   // 完了後は外す（失敗時も）
@@ -124,4 +192,95 @@ export function findOrCreateSeries(gid: string, name: string): Promise<string> {
     () => inflight.delete(key),
   );
   return task;
+}
+
+// ---------------------------------------------------------------------------
+// まとめる・削除する
+// ---------------------------------------------------------------------------
+
+/** サーバー優先で読む。オフラインでキャッシュにも無ければ null */
+async function readSeries(ref: DocumentReference): Promise<WithId<Series> | null> {
+  try {
+    const snap = await getDoc(ref);
+    return snap.exists() ? docWithId<Series>(snap) : null;
+  } catch (e) {
+    if (typeof e === 'object' && e !== null && 'code' in e && e.code === 'unavailable') return null;
+    throw toDataError(e);
+  }
+}
+
+/** シリーズの本の参照（オフラインのときはキャッシュにある本だけ） */
+async function seriesBookRefs(gid: string, seriesId: string): Promise<DocumentReference[]> {
+  try {
+    const snap = await getDocs(query(booksCol(gid), where('seriesId', '==', seriesId)));
+    return snap.docs.map((d) => d.ref);
+  } catch (e) {
+    throw toDataError(e);
+  }
+}
+
+type BatchOp =
+  | { kind: 'update'; ref: DocumentReference; data: Record<string, unknown> }
+  | { kind: 'delete'; ref: DocumentReference };
+
+/** 操作を BATCH_LIMIT 件ずつのバッチで書く（最後の操作は最後のバッチに入る） */
+async function commitOps(ops: BatchOp[]): Promise<void> {
+  const commits = chunk(ops, BATCH_LIMIT).map((group) => {
+    const batch = writeBatch(db);
+    for (const op of group) {
+      if (op.kind === 'update') batch.update(op.ref, op.data);
+      else batch.delete(op.ref);
+    }
+    return batch.commit();
+  });
+  await settleWrite(Promise.all(commits));
+}
+
+/**
+ * シリーズ fromId を intoId にまとめる（同じシリーズが 2 つできた場合など）。
+ * fromId の本をすべて intoId に移し、fromId を削除する。全巻数は intoId の値を残し、無ければ fromId の値を使う。
+ * オフラインでも書ける（writeBatch。後で自動送信）。
+ */
+export async function mergeSeries(gid: string, fromId: string, intoId: string): Promise<void> {
+  if (!isValidDocId(fromId) || !isValidDocId(intoId)) throw new Error('シリーズが見つかりません');
+  if (fromId === intoId) throw new Error('同じシリーズにはまとめられません');
+  const [from, into, bookRefs] = await Promise.all([
+    readSeries(doc(seriesCol(gid), fromId)),
+    readSeries(doc(seriesCol(gid), intoId)),
+    seriesBookRefs(gid, fromId),
+  ]);
+  if (!into) throw new Error('まとめる先のシリーズが見つかりません。画面を開き直してください。');
+  const ops: BatchOp[] = bookRefs.map((ref) => ({
+    kind: 'update',
+    ref,
+    data: { seriesId: intoId, updatedAt: serverTimestamp() },
+  }));
+  if (into.totalVolumes === null && from?.totalVolumes != null) {
+    ops.push({
+      kind: 'update',
+      ref: doc(seriesCol(gid), intoId),
+      data: { totalVolumes: from.totalVolumes, updatedAt: serverTimestamp() },
+    });
+  }
+  ops.push({ kind: 'delete', ref: doc(seriesCol(gid), fromId) });
+  await commitOps(ops);
+}
+
+/**
+ * シリーズを削除する。本があるときは detachBooks: true のときだけ、本をシリーズから外して（seriesId を null に）削除する。
+ * 本の巻数はそのまま残す。貸出記録は変わらない。
+ */
+export async function deleteSeries(gid: string, id: string, opts: { detachBooks?: boolean } = {}): Promise<void> {
+  if (!isValidDocId(id)) throw new Error('シリーズが見つかりません');
+  const bookRefs = await seriesBookRefs(gid, id);
+  if (bookRefs.length > 0 && !opts.detachBooks) {
+    throw new Error(`このシリーズには本が ${bookRefs.length}冊あります。本をシリーズから外してから削除してください。`);
+  }
+  const ops: BatchOp[] = bookRefs.map((ref) => ({
+    kind: 'update',
+    ref,
+    data: { seriesId: null, updatedAt: serverTimestamp() },
+  }));
+  ops.push({ kind: 'delete', ref: doc(seriesCol(gid), id) });
+  await commitOps(ops);
 }

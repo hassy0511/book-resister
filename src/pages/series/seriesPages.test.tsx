@@ -20,6 +20,8 @@ const state = vi.hoisted(() => ({
 
 const api = vi.hoisted(() => ({
   updateSeries: vi.fn(async () => undefined),
+  mergeSeries: vi.fn(async () => undefined),
+  deleteSeries: vi.fn(async () => undefined),
   loansForBooksArg: vi.fn(),
 }));
 
@@ -27,9 +29,11 @@ vi.mock('../../data/series', () => ({
   useSeries: () => state.series,
   useSeriesList: () => state.seriesList,
   updateSeries: api.updateSeries,
+  mergeSeries: api.mergeSeries,
+  deleteSeries: api.deleteSeries,
 }));
 vi.mock('../../data/books', () => ({
-  useBooks: () => state.books,
+  useSeriesBooks: () => state.books,
   useBooksInSeries: () => state.booksInSeries,
 }));
 vi.mock('../../data/loans', () => ({
@@ -122,6 +126,8 @@ beforeEach(() => {
   vi.useFakeTimers({ toFake: ['Date'] });
   vi.setSystemTime(new Date('2026-11-08T09:00:00'));
   api.updateSeries.mockClear();
+  api.mergeSeries.mockClear();
+  api.deleteSeries.mockClear();
   api.loansForBooksArg.mockClear();
   localStorage.clear();
   loanSeq = 0;
@@ -176,6 +182,36 @@ describe('SeriesDetailPage', () => {
     expect(screen.getByText('まだ借りていない巻：')).toBeTruthy();
     expect(screen.getByText('2, 5, 7〜9')).toBeTruthy();
     expect(api.loansForBooksArg).toHaveBeenLastCalledWith(['b1', 'b3a', 'b3b', 'b4', 'b6', 'x']);
+  });
+
+  it('前に読んだ巻をもう一度借りている間は、貸出中の色に読んだ印を添え、「読んだ」の巻数にも数える', () => {
+    state.series = { data: series('s1', 'おしりたんてい', 3), loading: false, error: null };
+    state.booksInSeries = { data: [book('b1', 1), book('b2', 2)], loading: false, error: null };
+    state.loansForBooks = {
+      data: [loan('b1', 'read', '2026-09-01'), loan('b1', null, '2026-11-01', false), loan('b2', 'read')],
+      loading: false,
+      error: null,
+    };
+    renderAt('/series/s1');
+    const grid = screen.getByRole('list', { name: '巻ごとの状況' });
+    const cell1 = within(grid).getByRole('link', { name: '1巻 貸出中（前に読んだ）' });
+    expect(cell1.className).toContain('stateReading');
+    expect(within(grid).getByRole('link', { name: '2巻 読んだ' })).toBeTruthy();
+    // 要約の「読んだ」は 2巻（マス目の読んだ印と合う）
+    expect(screen.getByText('読んだ', { selector: 'dt' }).parentElement?.textContent).toBe('読んだ2巻');
+    expect(screen.getByText(/の付いた貸出中の巻は、前に読んだ巻です/)).toBeTruthy();
+
+    act(() => {
+      fireEvent.click(screen.getByRole('radio', { name: '一覧' }));
+    });
+    const list = screen.getByRole('list', { name: '巻ごとの状況' });
+    expect(within(list).getByText('貸出中（前に読んだ）')).toBeTruthy();
+  });
+
+  it('前に読んだ巻が無ければ、読んだ印の説明は出さない', () => {
+    renderAt('/series/s1');
+    expect(screen.queryByText(/前に読んだ巻です/)).toBeNull();
+    expect(screen.getByText('読んだ', { selector: 'dt' }).parentElement?.textContent).toBe('読んだ1巻');
   });
 
   it('同じ巻に複数の本があればタップで選べる', () => {
@@ -233,6 +269,51 @@ describe('SeriesDetailPage', () => {
     await flush();
     expect(api.updateSeries).toHaveBeenCalledWith('g1', 's1', { totalVolumes: 12 });
     expect(screen.getByText('シリーズを保存しました')).toBeTruthy();
+  });
+
+  it('同じ名前のシリーズがほかにもあれば、そちらにまとめてその画面へ移る', async () => {
+    state.seriesList = {
+      data: [series('s1', 'おしりたんてい', 9), series('s0', 'おしりたんてい', null)],
+      loading: false,
+      error: null,
+    };
+    renderAt('/series/s1');
+    act(() => {
+      fireEvent.click(screen.getByRole('button', { name: 'シリーズを編集' }));
+    });
+    const dialog = screen.getByRole('dialog', { name: 'シリーズを編集' });
+    expect(within(dialog).getByText(/同じ名前のシリーズ「おしりたんてい」がほかにもあります/)).toBeTruthy();
+    act(() => {
+      fireEvent.click(within(dialog).getByRole('button', { name: 'このシリーズを「おしりたんてい」にまとめる' }));
+    });
+    const confirm = screen.getByRole('dialog', { name: '「おしりたんてい」にまとめますか？' });
+    expect(within(confirm).getByText(/本 6冊を「おしりたんてい」に移し/)).toBeTruthy();
+    await act(async () => {
+      fireEvent.click(within(confirm).getByRole('button', { name: 'まとめる' }));
+    });
+    await flush();
+    expect(api.mergeSeries).toHaveBeenCalledWith('g1', 's1', 's0');
+    expect(screen.getByTestId('url').textContent).toBe('/series/s0');
+  });
+
+  it('シリーズを削除すると、本をシリーズから外して一覧へ戻る', async () => {
+    renderAt('/series/s1');
+    act(() => {
+      fireEvent.click(screen.getByRole('button', { name: 'シリーズを編集' }));
+    });
+    const dialog = screen.getByRole('dialog', { name: 'シリーズを編集' });
+    expect(within(dialog).queryByRole('button', { name: /にまとめる/ })).toBeNull();
+    act(() => {
+      fireEvent.click(within(dialog).getByRole('button', { name: 'シリーズを削除' }));
+    });
+    const confirm = screen.getByRole('dialog', { name: 'シリーズ「おしりたんてい」を削除しますか？' });
+    expect(within(confirm).getByText(/本 6冊はシリーズから外れます/)).toBeTruthy();
+    await act(async () => {
+      fireEvent.click(within(confirm).getByRole('button', { name: '削除する' }));
+    });
+    await flush();
+    expect(api.deleteSeries).toHaveBeenCalledWith('g1', 's1', { detachBooks: true });
+    expect(screen.getByTestId('url').textContent).toBe('/series');
   });
 
   it('本が無いシリーズ・見つからないシリーズ', () => {

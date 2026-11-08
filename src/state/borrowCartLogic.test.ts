@@ -82,6 +82,20 @@ describe('findDuplicate', () => {
     expect(findDuplicate(items, { isbn: '9784591005262' })).toBeNull();
     expect(findDuplicate(items, { titleWithoutIsbn: 'ちがう本' })).toBeNull();
   });
+  it('ISBN なしで同じタイトルでも、巻数が両方あって違えば別の本（月刊絵本の別の号）', () => {
+    const monthly: CartItem[] = [
+      { ...itemFromCandidate(cand({ isbn: null, title: 'こどものとも年中向き', volume: 4 }), 'm-4') },
+    ];
+    expect(findDuplicate(monthly, { titleWithoutIsbn: 'こどものとも年中向き', volume: 5 })).toBeNull();
+    expect(findDuplicate(monthly, { titleWithoutIsbn: 'こどものとも年中向き', volume: 4 })?.key).toBe('m-4');
+    expect(findDuplicate(monthly, { titleWithoutIsbn: 'こどものとも年中向き', volume: null })?.key).toBe('m-4');
+  });
+  it('「別の本として登録」にした項目とは同じタイトルでも重複にしない', () => {
+    const forced: CartItem[] = [
+      { ...itemFromCandidate(cand({ isbn: null, title: 'ももたろう' }), 'm-1'), forceNew: true },
+    ];
+    expect(findDuplicate(forced, { titleWithoutIsbn: 'ももたろう' })).toBeNull();
+  });
 });
 
 describe('既存の本・書誌の反映', () => {
@@ -149,6 +163,60 @@ describe('既存の本・書誌の反映', () => {
     expect(out.publisher).toBe('A社');
     expect(out.coverUrl).toBe('x');
     expect(out.title).toBe('ぐりとぐら');
+  });
+});
+
+describe('タイトルでの結び付けと「別の本として登録」', () => {
+  const typed = () =>
+    itemFromCandidate(
+      cand({ isbn: null, title: 'ももたろう', authors: ['てがき さっか'], publisher: null, coverUrl: null, source: 'manual' }),
+      'manual-m',
+    );
+  const other = book(
+    { isbn: '9784834000000', title: 'ももたろう', authors: ['べつの さっか'], publisher: 'B社', seriesId: 's-old', volume: 2 },
+    'isbn-9784834000000',
+  );
+
+  it('きっかけを matchedBy に残し、タイトルで結び付けたときは元の内容を残す', () => {
+    expect(applyExisting(newIsbnItem(ISBN), { book: book(), seriesName: null }).matchedBy).toBe('isbn');
+    expect(itemFromBook(book(), null, 'k').matchedBy).toBe('chosen');
+    const linked = applyExisting(typed(), { book: other, seriesName: '昔話' }, 'title');
+    expect(linked).toMatchObject({ existingBookId: other.id, matchedBy: 'title', seriesName: '昔話', volume: 2 });
+    expect(linked.candidate?.publisher).toBe('B社');
+    expect(linked.beforeMatch?.candidate?.authors).toEqual(['てがき さっか']);
+  });
+
+  it('forceNew で結び付きを外し、結び付ける前の内容に戻す', () => {
+    const linked = applyExisting(typed(), { book: other, seriesName: '昔話' }, 'title');
+    const out = applyPatch(linked, { forceNew: true });
+    expect(out).toMatchObject({
+      existingBookId: null,
+      matchedBy: null,
+      forceNew: true,
+      beforeMatch: null,
+      seriesName: null,
+      volume: null,
+    });
+    expect(out.candidate).toEqual(typed().candidate);
+    // ISBN のある本に結び付けたときに入った ISBN も外す
+    expect(linked.isbn).toBe('9784834000000');
+    expect(out.isbn).toBeNull();
+    // 後から届いたタイトルの照合では結び付け直さない
+    expect(applyExisting(out, { book: other, seriesName: null }, 'title')).toBe(out);
+  });
+
+  it('existingBookId: null でも外せる', () => {
+    const linked = applyExisting(typed(), { book: other, seriesName: null }, 'title');
+    expect(applyPatch(linked, { existingBookId: null })).toMatchObject({ existingBookId: null, forceNew: false });
+  });
+
+  it('保存して読み戻しても結び付きのきっかけと forceNew が残る', () => {
+    const linked = applyExisting(typed(), { book: other, seriesName: '昔話' }, 'title');
+    const forced = { ...applyPatch(typed(), { forceNew: true }), key: 'manual-f' };
+    const restored = parseStoredCart(serializeCart('g1', [linked, forced])).items;
+    expect(restored[0]).toMatchObject({ matchedBy: 'title', existingBookId: other.id });
+    expect(restored[0].beforeMatch?.candidate?.title).toBe('ももたろう');
+    expect(restored[1]).toMatchObject({ forceNew: true, matchedBy: null });
   });
 });
 

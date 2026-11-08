@@ -7,11 +7,13 @@
  *   denied        … 設定アプリで許可する手順
  *   unsupported   … 対応していない旨
  * 下に通知の内容（3 日前・前日・延滞中は毎朝、8 時ごろ、家族全員）を説明する。
+ * アプリ名は、ホーム画面のアイコンと「設定」>「通知」の一覧に出る名前（HOME_SCREEN_APP_NAME）で案内する。
  */
 import { useState, type ReactNode } from 'react';
 import { useRequiredGroup } from '../../group/GroupProvider';
 import { disablePush, enablePush, isIos, showTestNotification, type PushState } from '../../lib/push';
 import { Button, Card, Page, Spinner, useToast } from '../../components/ui';
+import { detectInAppBrowser } from '../../components/inAppBrowser';
 import {
   AlertIcon,
   BellIcon,
@@ -34,6 +36,12 @@ import { usePushState } from './usePushState';
 import styles from './NotificationsPage.module.css';
 
 type Busy = 'enable' | 'disable' | 'test' | null;
+
+/**
+ * ホーム画面に追加したときの既定の名前（index.html の apple-mobile-web-app-title、manifest の short_name と同じ）。
+ * iPhone の「設定」>「通知」の一覧にもこの名前で出る。正式名（かりた本ノート）とは違うので注意。
+ */
+const HOME_SCREEN_APP_NAME = 'かりた本';
 
 function errorText(e: unknown, fallback: string): string {
   return e instanceof Error && e.message ? e.message : fallback;
@@ -183,6 +191,7 @@ function StateSection({ state, busy, onEnable, onDisable, onTest, onRecheck }: S
             <StatusHead icon={<BellOffIcon size={26} />} title="ホーム画面に追加すると通知を受け取れます">
               iPhone では、Safari から「ホーム画面に追加」したアプリでだけ通知を受け取れます（iOS 16.4 以上）。
             </StatusHead>
+            <InAppBrowserHint />
           </Card>
           <InstallGuide />
         </>
@@ -216,6 +225,18 @@ function StateSection({ state, busy, onEnable, onDisable, onTest, onRecheck }: S
         </Card>
       );
   }
+}
+
+/** LINE などのアプリ内ブラウザでは共有ボタンが無く「ホーム画面に追加」できないので、先に Safari で開くよう伝える */
+function InAppBrowserHint() {
+  const [app] = useState(() => detectInAppBrowser());
+  if (!app) return null;
+  return (
+    <p className={styles.inAppHint}>
+      いまは {app} の中のブラウザで開いています。ここからはホーム画面に追加できません。先に画面のメニュー（「…」など）から「Safari
+      で開く」を選び、Safari で次の手順を行ってください。
+    </p>
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -308,7 +329,7 @@ function InstallGuide() {
               <span className={styles.mockAppIcon}>
                 <BookIcon size={28} />
               </span>
-              <span className={styles.mockAppName}>かりた本ノート</span>
+              <span className={styles.mockAppName}>{HOME_SCREEN_APP_NAME}</span>
             </div>
           }
         >
@@ -342,7 +363,9 @@ function DeniedGuide() {
           }
         />
         <Step num={2} title="「通知」をタップ" />
-        <Step num={3} title="一覧から「かりた本ノート」をタップ" />
+        <Step num={3} title={`一覧から「${HOME_SCREEN_APP_NAME}」をタップ`}>
+          ホーム画面のアイコンの下に出ている名前です。追加するときに名前を変えた場合は、その名前を探してください。
+        </Step>
         <Step
           num={4}
           title="「通知を許可」をオンにする"
@@ -354,8 +377,22 @@ function DeniedGuide() {
           }
         />
         <Step num={5} title="このアプリに戻る">
-          戻ると自動で状態を確認します。一覧に「かりた本ノート」が無い場合は、ホーム画面のアイコンを削除して、もう一度ホーム画面に追加してください。
+          戻ると自動で状態を確認します。
         </Step>
+      </ol>
+
+      <h3 className={`${styles.sectionTitle} ${styles.troubleTitle}`}>一覧に見つからないとき</h3>
+      <ol className={styles.trouble}>
+        <li>
+          ホーム画面のアイコンの下に出ている名前で探してください（ふつうは「{HOME_SCREEN_APP_NAME}」。追加するときに変えた場合はその名前）。
+        </li>
+        <li>この画面を Safari ではなく、ホーム画面のアイコンから開いているか確かめてください。</li>
+        <li>
+          {'それでも見つからないときだけ、ホーム画面のアイコンを削除して、もう一度ホーム画面に追加してください。' +
+            '削除するとログインと通知の設定が消えるので、ログインと「通知をオンにする」をやり直す必要があります。' +
+            '電波の無いところで登録・返却した内容がまだ送られていないと消えることがあるので、' +
+            '先にインターネットにつながる場所でこのアプリを開いてから削除してください。'}
+        </li>
       </ol>
     </section>
   );

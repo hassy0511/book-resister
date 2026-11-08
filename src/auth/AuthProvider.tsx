@@ -1,6 +1,8 @@
 /**
  * ログイン状態の提供（useAuth）。
  * Google はポップアップを試し、使えない環境ではリダイレクトに切り替える。
+ * ホーム画面から開いた iPhone / iPad のアプリ（standalone）では、最初からリダイレクトを使う
+ * （Firebase がポップアップの代わりにアプリ内ブラウザを開き、閉じたことも結果も受け取れないことがあるため）。
  */
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
@@ -17,6 +19,7 @@ import {
   type UserCredential,
 } from 'firebase/auth';
 import { auth, isFirebaseConfigured } from '../firebase';
+import { isIos, isStandalone } from '../lib/push';
 
 export interface AuthContextValue {
   user: User | null;
@@ -128,14 +131,35 @@ function redirectResultOnce(): Promise<UserCredential | null> {
   return redirectResultPromise;
 }
 
+/**
+ * Google のログインを最初からリダイレクトで行うか。
+ * ホーム画面のアプリ（iOS の standalone）では、Firebase は window.open の代わりにアプリ内ブラウザを開くため、
+ * ポップアップのブロックも、利用者が閉じたことも分からず、ログイン画面が待ったままになる。
+ * authDomain をアプリと同じドメインにしている（docs/setup.md）ので、リダイレクトなら同じ保存領域に戻ってくる。
+ */
+export function prefersRedirectSignIn(): boolean {
+  return isIos() && isStandalone();
+}
+
+/** いちばん新しい Google ログインの呼び出し（前の呼び出しの後始末で邪魔をしないため） */
+let googleAttempt = 0;
+
 function signInWithGoogle(): Promise<void> {
   return withAuthError(async () => {
     requireConfigured();
     const provider = new GoogleAuthProvider();
     provider.setCustomParameters({ prompt: 'select_account' });
+    const attempt = ++googleAttempt;
+    if (prefersRedirectSignIn()) {
+      // ページ遷移するので、この Promise は基本的に解決しない
+      await signInWithRedirect(auth, provider);
+      return;
+    }
     try {
       await signInWithPopup(auth, provider);
     } catch (e) {
+      // 新しいログインを始めたので取り消された（画面の「キャンセル」の後でもう一度押したなど）
+      if (attempt !== googleAttempt) return;
       const code = errorCode(e);
       if (code && REDIRECT_FALLBACK_CODES.has(code)) {
         // ページ遷移するので、この Promise は基本的に解決しない

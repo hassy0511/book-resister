@@ -26,6 +26,14 @@
   overflow-wrap: anywhere;
 }
 
+.titleLoading {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-md);
+}
+
 .titleMissing {
   font-size: var(--font-size-md);
   font-weight: var(--font-weight-bold);
@@ -205,6 +213,32 @@
 
 .moreLink {
   align-self: flex-end;
+}
+
+/* ---- ISBN なしで登録した同じタイトルの本 ---- */
+
+.sameTitleNote {
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.sameTitleBook {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.sameTitleHead {
+  display: flex;
+  gap: var(--space-3);
+  align-items: flex-start;
+}
+
+.sameTitleTitle {
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-bold);
+  line-height: 1.35;
+  overflow-wrap: anywhere;
 }
 
 /* ---- シリーズ ---- */

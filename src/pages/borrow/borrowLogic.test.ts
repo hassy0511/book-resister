@@ -3,11 +3,13 @@ import type { BookCandidate } from '../../types';
 import {
   autoDueOn,
   bookIdForCartItem,
+  borrowedOnError,
   describeLoan,
   duplicatedBookIds,
   effectiveDueOn,
   existingSeriesPatch,
   formatFullDate,
+  isbnFromSearchQuery,
   latestReturnedLoan,
   loadLastLocationId,
   loanSnapshotFor,
@@ -15,6 +17,7 @@ import {
   normalizeForSearch,
   rankByAuthor,
   pickDefaultLocationId,
+  sameTitleBooksWithoutIsbn,
   saveLastLocationId,
   splitAuthors,
   submitBlockReason,
@@ -136,6 +139,7 @@ describe('submitBlockReason', () => {
     borrowerUid: 'u1',
     borrowedOn: '2026-11-08',
     bulkDueOn: '2026-11-22',
+    today: '2026-11-08',
   };
 
   it('そろっていれば null', () => {
@@ -171,6 +175,22 @@ describe('submitBlockReason', () => {
       }),
     ).toBe('返却日は借りた日以降にしてください');
   });
+
+  it('借りた日が今日より後なら登録できない（返却画面で返却した日を選べなくなるため）', () => {
+    expect(submitBlockReason({ ...base, borrowedOn: '2026-11-28', bulkDueOn: '2026-12-12' })).toBe(
+      '借りた日は今日以前にしてください',
+    );
+    expect(submitBlockReason({ ...base, borrowedOn: '2026-11-07' })).toBeNull();
+  });
+});
+
+describe('borrowedOnError', () => {
+  it('今日より後だけエラー。未入力は submitBlockReason に任せる', () => {
+    expect(borrowedOnError('2026-11-09', '2026-11-08')).toBe('今日より後の日付は選べません');
+    expect(borrowedOnError('2026-11-08', '2026-11-08')).toBeNull();
+    expect(borrowedOnError('2025-01-01', '2026-11-08')).toBeNull();
+    expect(borrowedOnError('', '2026-11-08')).toBeNull();
+  });
 });
 
 describe('タイトル検索の補助', () => {
@@ -190,6 +210,38 @@ describe('タイトル検索の補助', () => {
     expect(matchExistingBooks(books, 'ぐりとぐら', 'キヨノ')).toHaveLength(0);
     expect(matchExistingBooks(books, '  ', '')).toHaveLength(0);
     expect(matchExistingBooks(books, 'ぐり', '', 1)).toHaveLength(1);
+  });
+
+  it('isbnFromSearchQuery は searchByTitle と同じく数字だけの入力を ISBN として読む', () => {
+    expect(isbnFromSearchQuery('9784834000825')).toBe('9784834000825');
+    expect(isbnFromSearchQuery(' 978-4-8340-0082-5 ')).toBe('9784834000825');
+    expect(isbnFromSearchQuery('４８３４０００８２６')).toBe('9784834000825');
+    expect(isbnFromSearchQuery('9784834000826')).toBeNull(); // チェックディジット違い
+    expect(isbnFromSearchQuery('ぐりとぐら')).toBeNull();
+    expect(isbnFromSearchQuery('100かいだてのいえ')).toBeNull();
+    expect(isbnFromSearchQuery('')).toBeNull();
+  });
+
+  it('matchExistingBooks は ISBN の入力なら同じ ISBN の本を先頭に出す', () => {
+    const list = [
+      { title: 'ぐりとぐら', authors: [], isbn: null },
+      { title: 'ぐりとぐら（ISBN あり）', authors: [], isbn: '9784834000825' },
+    ];
+    expect(matchExistingBooks(list, '978-4-8340-0082-5', '').map((b) => b.title)).toEqual(['ぐりとぐら（ISBN あり）']);
+    expect(matchExistingBooks(list, '9784591005262', '')).toEqual([]);
+  });
+
+  it('sameTitleBooksWithoutIsbn は ISBN なしの本だけを、空白・全角半角の違いを無視したタイトル一致で探す', () => {
+    const list = [
+      { id: 'a', title: 'おしりたんてい ププッ ゆうれいなんてこわくない', isbn: null },
+      { id: 'b', title: 'おしりたんてい ププッゆうれいなんてこわくない', isbn: '9784591153598' },
+      { id: 'c', title: 'おしりたんてい', isbn: null },
+    ];
+    expect(sameTitleBooksWithoutIsbn(list, 'おしりたんてい　ププッゆうれいなんてこわくない').map((b) => b.id)).toEqual(['a']);
+    // 部分一致ではつなげない（シリーズ名だけのタイトルなど）
+    expect(sameTitleBooksWithoutIsbn(list, 'おしりたんてい ププッ').map((b) => b.id)).toEqual([]);
+    expect(sameTitleBooksWithoutIsbn(list, '')).toEqual([]);
+    expect(sameTitleBooksWithoutIsbn(list, null)).toEqual([]);
   });
 
   it('rankByAuthor は著者が一致するものを先に', () => {

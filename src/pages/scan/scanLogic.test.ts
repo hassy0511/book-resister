@@ -55,6 +55,44 @@ describe('summarizeSeries', () => {
     expect(s.total).toBe(7);
   });
 
+  it('前に「読んだ」で返して、いま読み返すために借りている巻は「読んだ巻」と「貸出中」の両方に入る', () => {
+    const s = summarizeSeries({
+      books: [
+        { id: 'v1', volume: 1 },
+        { id: 'v2', volume: 2 },
+        { id: 'v3', volume: 3 },
+      ],
+      loans: [
+        { bookId: 'v1', returnedOn: '2026-01-10', readStatus: 'read' },
+        { bookId: 'v1', returnedOn: null, readStatus: null },
+        { bookId: 'v2', returnedOn: '2026-02-10', readStatus: 'read' },
+      ],
+      totalVolumes: 3,
+    });
+    expect(s.readVolumes).toEqual([1, 2]);
+    expect(s.readingVolumes).toEqual([1]);
+    expect(s.notBorrowedVolumes).toEqual([3]);
+  });
+
+  it('同じ巻の別の版を読んでいれば、もう一方が途中までのままでも「途中・未読」には入れない', () => {
+    const s = summarizeSeries({
+      books: [
+        { id: 'a', volume: 1 },
+        { id: 'b', volume: 1 },
+        { id: 'c', volume: 2 },
+      ],
+      loans: [
+        { bookId: 'a', returnedOn: '2026-01-10', readStatus: 'read' },
+        { bookId: 'b', returnedOn: '2026-03-10', readStatus: 'partial' },
+        { bookId: 'c', returnedOn: '2026-03-10', readStatus: 'partial' },
+        { bookId: 'c', returnedOn: '2026-04-10', readStatus: 'unread' },
+      ],
+      totalVolumes: null,
+    });
+    expect(s.readVolumes).toEqual([1]);
+    expect(s.notFinishedVolumes).toEqual([2]);
+  });
+
   it('貸出が無ければ空', () => {
     const s = summarizeSeries({ books, loans: [], totalVolumes: null });
     expect(s.borrowedVolumes).toEqual([]);

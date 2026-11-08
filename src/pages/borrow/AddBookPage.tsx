@@ -4,6 +4,9 @@
  *     検索はタイトルだけで行い、著者は一致するものを先に並べるのに使う（書誌 API が書名での検索のため）。
  *   - グループ内の本（以前に登録した本）も、タイトルの部分一致で上に出す（もう一度借りる場合）。
  *   - 見つからない場合は手入力（タイトル必須、著者・出版社・シリーズ名・巻数）。シリーズはタイトルから推定する。
+ *   - 検索欄に ISBN（奥付の番号など）を入れて見つからなかった場合は、手入力ではなく「ISBN で追加する」
+ *     （cart.addIsbn。バーコードを読んだときと同じ扱いで、タイトルは確認画面で入力）にして ISBN を捨てない。
+ *     ISBN を付けておけば、あとでバーコードを読んだときに同じ本として見つかる。
  *   - 追加したら「借りる内容の確認へ」か「続けて追加」を選ぶ。
  */
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
@@ -31,19 +34,34 @@ import {
 } from '../../components/ui/icons';
 import { useBooks } from '../../data/books';
 import { searchByTitle } from '../../lib/bookLookup';
+import { formatIsbn } from '../../lib/isbn';
 import { guessSeries } from '../../lib/series';
 import { useBorrowCart } from '../../state/borrowCart';
 import { findDuplicate } from '../../state/borrowCartLogic';
 import type { Book, BookCandidate, WithId } from '../../types';
-import { matchExistingBooks, matchesAuthor, normalizeForSearch, rankByAuthor, splitAuthors } from './borrowLogic';
+import {
+  isbnFromSearchQuery,
+  matchExistingBooks,
+  matchesAuthor,
+  normalizeForSearch,
+  rankByAuthor,
+  splitAuthors,
+} from './borrowLogic';
 import styles from './AddBookPage.module.css';
 
 type SearchState =
   | { status: 'idle' }
   | { status: 'loading'; query: string }
-  | { status: 'done'; query: string; author: string; results: BookCandidate[] };
+  | {
+      status: 'done';
+      query: string;
+      author: string;
+      results: BookCandidate[];
+      /** 検索語が ISBN として読めたときの ISBN-13 */
+      isbn: string | null;
+    };
 
-type AddedState = { title: string; result: 'added' | 'duplicate' };
+type AddedState = { title: string; result: 'added' | 'duplicate'; note?: string };
 
 function isOffline(): boolean {
   return typeof navigator !== 'undefined' && navigator.onLine === false;
@@ -84,7 +102,13 @@ export default function AddBookPage() {
       results = [];
     }
     if (controller.signal.aborted) return;
-    setSearch({ status: 'done', query: q, author: author.trim(), results: rankByAuthor(results, author) });
+    setSearch({
+      status: 'done',
+      query: q,
+      author: author.trim(),
+      results: rankByAuthor(results, author),
+      isbn: isbnFromSearchQuery(q),
+    });
   };
 
   // グループ内の本（タイトルの部分一致）
@@ -113,6 +137,16 @@ export default function AddBookPage() {
     showAdded({ title: book.title, result });
   };
 
+  /** 見つからなかった ISBN を、バーコードを読んだときと同じ扱いで追加する（タイトルは確認画面で入力） */
+  const addIsbn = (isbn: string) => {
+    const result = cart.addIsbn(isbn);
+    showAdded({
+      title: `ISBN ${formatIsbn(isbn)}`,
+      result,
+      note: result === 'added' ? '本の情報が見つからなければ、借りる内容の確認画面でタイトルを入力してください。' : undefined,
+    });
+  };
+
   const inCartCandidate = (c: BookCandidate) =>
     findDuplicate(cart.items, { isbn: c.isbn, titleWithoutIsbn: c.isbn ? null : c.title }) !== null;
   const inCartBook = (b: WithId<Book>) => findDuplicate(cart.items, { isbn: b.isbn, bookId: b.id }) !== null;
@@ -132,7 +166,8 @@ export default function AddBookPage() {
   const seriesValue: SeriesPickerValue = seriesTouched ? mSeries : guessed;
 
   const openManual = () => {
-    if (!mTitle.trim() && title.trim()) setMTitle(title.trim());
+    // ISBN の数字はタイトルとして写さない（ISBN を残すには「ISBN で追加する」を使う）
+    if (!mTitle.trim() && title.trim() && !isbnFromSearchQuery(title)) setMTitle(title.trim());
     if (!mAuthor.trim() && author.trim()) setMAuthor(author.trim());
     setManualOpen(true);
     window.setTimeout(() => manualRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
@@ -175,8 +210,27 @@ export default function AddBookPage() {
     resultsView = <Spinner center size="lg" showLabel label="図書館などの情報から探しています…" />;
   } else if (search.status === 'done') {
     const authorHits = search.author ? search.results.filter((c) => matchesAuthor(c.authors, search.author)).length : 0;
+    const notFoundIsbn = search.isbn;
     resultsView =
-      search.results.length === 0 ? (
+      search.results.length === 0 && notFoundIsbn ? (
+        <EmptyState
+          icon={<SearchIcon />}
+          title={`「${search.query}」は見つかりませんでした`}
+          description={
+            <>
+              {isOffline() ? 'ネットワークにつながっていないようです。' : '図書館などの情報にまだ無い本のようです。'}
+              ISBN の本として追加すると、タイトルは借りる内容の確認画面で入力できます。ISBN
+              を付けておくと、あとでバーコードを読んだときに同じ本として見つかります。
+            </>
+          }
+          action={
+            <Button variant="secondary" icon={<PlusIcon />} onClick={() => addIsbn(notFoundIsbn)}>
+              ISBN で追加する（タイトルは確認画面で入力）
+            </Button>
+          }
+          compact
+        />
+      ) : search.results.length === 0 ? (
         <EmptyState
           icon={<SearchIcon />}
           title={`「${search.query}」は見つかりませんでした`}
@@ -406,6 +460,12 @@ export default function AddBookPage() {
           <p className={styles.sheetMessage}>
             「{added.title}」
             {added.result === 'duplicate' ? 'は、すでに借りる本のリストに入っています。' : 'を借りる本のリストに追加しました。'}
+            {added.note ? (
+              <>
+                <br />
+                {added.note}
+              </>
+            ) : null}
           </p>
         ) : null}
       </Sheet>

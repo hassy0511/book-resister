@@ -108,11 +108,30 @@ export function inviteExpiryDate(nowMs: number = Date.now(), days: number = INVI
   return todayString(new Date(nowMs + days * 24 * 60 * 60 * 1000));
 }
 
+/**
+ * 家族に送る招待リンク。LINE で開いたときにアプリ内ブラウザではなく Safari などで開くよう、
+ * LINE の URL パラメータ openExternalBrowser=1 を付ける（アプリ内ブラウザでは Google のログインが拒否され、
+ * ホーム画面にも追加できないため）。/join/:code の画面とログイン後の戻り先は、クエリが付いていてもそのまま動く。
+ */
+export function shareableInviteUrl(url: string): string {
+  try {
+    const u = new URL(url);
+    u.searchParams.set('openExternalBrowser', '1');
+    return u.toString();
+  } catch {
+    if (/[?&]openExternalBrowser=/.test(url)) return url;
+    return `${url}${url.includes('?') ? '&' : '?'}openExternalBrowser=1`;
+  }
+}
+
 /** 共有シートで送る文面（URL は別に渡す） */
 export function inviteShareText(groupName: string, expiry: DateString, today?: DateString): string {
   const name = groupName.trim() || '家族のグループ';
   const until = formatDate(expiry, today ? { today } : {});
-  return `「${name}」の本の貸出ノートに招待します。リンクを開いてログインすると参加できます（${until}まで有効）。`;
+  return (
+    `「${name}」の本の貸出ノートに招待します。リンクを開いてログインすると参加できます（${until}まで有効）。` +
+    'iPhone では Safari で開いてください（LINE などのアプリの中で開くと、Google でログインできません）。'
+  );
 }
 
 // ---------------------------------------------------------------------------

@@ -38,13 +38,31 @@ vi.mock('../../group/GroupProvider', () => {
     useRequiredGroup: () => ({ groupId: 'g1', uid: 'u1', loading: false, members: state.members, memberName }),
   };
 });
-vi.mock('../../data/books', () => ({
-  useBooks: () => state.books,
-  getBook: api.getBook,
-  findBookForCandidate: api.findBookForCandidate,
-  upsertBookFromCandidate: api.upsertBookFromCandidate,
-  updateBook: api.updateBook,
-}));
+vi.mock('../../data/books', () => {
+  type B = { id: string; isbn: string | null; seriesId: string | null };
+  const books = () => state.books.data as B[];
+  const subset = (pred: (b: B) => boolean) => ({ ...state.books, data: books().filter(pred) });
+  return {
+    useBooks: () => state.books,
+    useBook: (id: string | undefined) => ({
+      data: books().find((b) => b.id === id) ?? null,
+      loading: state.books.loading,
+      error: state.books.error,
+    }),
+    useBooksByIds: (ids: readonly string[]) => subset((b) => ids.includes(b.id)),
+    useBooksWithoutIsbn: () => subset((b) => b.isbn === null),
+    useBooksInSeries: (seriesId: string | undefined) => subset((b) => seriesId !== undefined && b.seriesId === seriesId),
+    getBook: api.getBook,
+    findBookForCandidate: api.findBookForCandidate,
+    upsertBookFromCandidate: api.upsertBookFromCandidate,
+    // 本物と同じく、結び付けた本の ID と、既存の本ならその内容を返す
+    saveBookFromCandidate: async (gid: string, c: unknown, series: unknown, opts: unknown) => {
+      const id = (await api.upsertBookFromCandidate(gid, c, series, opts)) as string;
+      return { id, existing: books().find((b) => b.id === id) ?? null };
+    },
+    updateBook: api.updateBook,
+  };
+});
 vi.mock('../../data/loans', () => ({
   useActiveLoans: () => state.active,
   useLoansForBooks: () => state.bookLoans,
@@ -259,6 +277,87 @@ describe('ScanPage（確認）', () => {
     expect(cart.items[0]).toMatchObject({ isbn: ISBN2, status: 'ready' });
   });
 
+  it('グループに無い本は、書誌の取得を待たずに「まだ借りたことがありません」を出す', async () => {
+    let resolveLookup: (c: BookCandidate | null) => void = () => undefined;
+    api.lookupByIsbn.mockImplementation(
+      () =>
+        new Promise<BookCandidate | null>((resolve) => {
+          resolveLookup = resolve;
+        }),
+    );
+    renderAt('/scan?mode=check');
+    fireEvent.click(screen.getByText('読み取り2'));
+    await flush();
+    const dialog = screen.getByRole('dialog');
+    expect(within(dialog).getByText('まだ借りたことがありません')).toBeTruthy();
+    expect(within(dialog).getByText('本の情報を取得しています…')).toBeTruthy();
+    // 取得中は「見つかりませんでした」や手入力の案内を出さない
+    expect(within(dialog).queryByText('本の情報が見つかりませんでした')).toBeNull();
+    expect(within(dialog).queryByText(/タイトルを入力して登録できます/)).toBeNull();
+    // 取得中でも借りられる（カート側で取得し直す）
+    expect(within(dialog).getByRole('button', { name: 'この本を借りる' })).toHaveProperty('disabled', false);
+
+    await act(async () => {
+      resolveLookup(cand({ isbn: ISBN2, title: 'からすのパンやさん' }));
+    });
+    expect(within(dialog).getByText('からすのパンやさん')).toBeTruthy();
+    expect(within(dialog).queryByText('本の情報を取得しています…')).toBeNull();
+  });
+
+  it('書誌の取得は 10 秒で打ち切り、見つからない扱いにする', async () => {
+    api.lookupByIsbn.mockImplementation(
+      (_isbn: string, opts: { signal?: AbortSignal }) =>
+        new Promise<BookCandidate | null>((resolve) => {
+          opts.signal?.addEventListener('abort', () => resolve(null));
+        }),
+    );
+    vi.useFakeTimers();
+    try {
+      renderAt('/scan?mode=check');
+      fireEvent.click(screen.getByText('読み取り2'));
+      await act(async () => {
+        await Promise.resolve();
+      });
+      const dialog = screen.getByRole('dialog');
+      expect(within(dialog).getByText('本の情報を取得しています…')).toBeTruthy();
+      await act(async () => {
+        vi.advanceTimersByTime(9_999);
+      });
+      expect(within(dialog).getByText('本の情報を取得しています…')).toBeTruthy();
+      await act(async () => {
+        vi.advanceTimersByTime(1);
+      });
+      expect(within(dialog).getByText('本の情報が見つかりませんでした')).toBeTruthy();
+      expect(within(dialog).getByText(/タイトルを入力して登録できます/)).toBeTruthy();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('書誌のタイトルが ISBN なしで登録した本と同じなら、その本の履歴と詳細へのリンクを出す（同じ本とは決めつけない）', async () => {
+    state.books = {
+      data: [book({ id: 'm1', isbn: null, title: 'おしりたんてい ププッ ゆうれいなんてこわくない', source: 'manual' })],
+      loading: false,
+      error: null,
+    };
+    state.bookLoans = {
+      data: [loan('m-old', { bookId: 'm1', borrowerUid: 'u1' }), loan('other', { bookId: 'zzz' })],
+      loading: false,
+      error: null,
+    };
+    api.lookupByIsbn.mockResolvedValue(cand({ isbn: ISBN2, title: 'おしりたんてい ププッゆうれいなんてこわくない' }));
+    renderAt('/scan?mode=check');
+    fireEvent.click(screen.getByText('読み取り2'));
+    await flush();
+    const dialog = screen.getByRole('dialog');
+    expect(within(dialog).getByText('まだ借りたことがありません')).toBeTruthy();
+    expect(within(dialog).getByText(/ISBN なしで登録した同じタイトルの本があります/)).toBeTruthy();
+    const section = within(dialog).getByRole('region', { name: 'ISBN なしで登録した同じタイトルの本' });
+    expect(within(section).getByText('これまでに1回')).toBeTruthy();
+    expect(within(section).getByText('2025年3月2日')).toBeTruthy();
+    expect(within(section).getByRole('link', { name: /この本の詳細を見る/ }).getAttribute('href')).toBe('/books/m1');
+  });
+
   it('借りたことがある本は履歴・貸出中・シリーズの状況を出す', async () => {
     state.books = {
       data: [
@@ -325,6 +424,41 @@ describe('AddBookPage', () => {
     expect(cart.items[0]).toMatchObject({ existingBookId: 'b9' });
   });
 
+  it('検索欄の ISBN が見つからなければ「ISBN で追加する」で ISBN を残して追加する（手入力に数字を写さない）', async () => {
+    api.searchByTitle.mockResolvedValue([]);
+    api.lookupByIsbn.mockResolvedValue(null);
+    renderAt('/borrow/add');
+    fireEvent.change(screen.getByLabelText('タイトル'), { target: { value: ISBN1 } });
+    fireEvent.click(screen.getByRole('button', { name: '検索する' }));
+    await flush();
+    expect(screen.getByText(`「${ISBN1}」は見つかりませんでした`)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: '手入力で追加する' })).toBeNull();
+
+    // 手入力を開いても ISBN の数字はタイトルに入れない
+    fireEvent.click(screen.getByRole('button', { name: /見つからない場合は手入力/ }));
+    expect((screen.getByLabelText(/^タイトル必須/) as HTMLInputElement).value).toBe('');
+
+    fireEvent.click(screen.getByRole('button', { name: 'ISBN で追加する（タイトルは確認画面で入力）' }));
+    expect(screen.getByText('追加しました')).toBeTruthy();
+    expect(screen.getByText(/「ISBN 978-4-8340-0082-5」を借りる本のリストに追加しました。/)).toBeTruthy();
+    await flush();
+    expect(cart.items).toHaveLength(1);
+    expect(cart.items[0]).toMatchObject({ key: ISBN1, isbn: ISBN1, status: 'not-found' });
+
+    // もう一度押しても二重には入らない
+    fireEvent.click(screen.getByRole('button', { name: '続けて追加' }));
+    fireEvent.click(screen.getByRole('button', { name: 'ISBN で追加する（タイトルは確認画面で入力）' }));
+    expect(screen.getByText('すでに追加済みです')).toBeTruthy();
+    expect(cart.items).toHaveLength(1);
+  });
+
+  it('検索欄に ISBN を入れると、その ISBN の登録済みの本を「以前に登録した本」に出す', () => {
+    state.books = { data: [book({ title: 'ぐりとぐら' })], loading: false, error: null };
+    renderAt('/borrow/add');
+    fireEvent.change(screen.getByLabelText('タイトル'), { target: { value: '978-4-8340-0082-5' } });
+    expect(screen.getByRole('button', { name: 'ぐりとぐらを追加' })).toBeTruthy();
+  });
+
   it('手入力で追加（シリーズはタイトルから推定）', async () => {
     renderAt('/borrow/add');
     fireEvent.click(screen.getByRole('button', { name: /見つからない場合は手入力/ }));
@@ -377,6 +511,49 @@ describe('BorrowConfirmPage', () => {
     expect(screen.getByTestId('url').textContent).toBe('/');
     expect(cart.items).toHaveLength(0);
     expect(localStorage.getItem('borrow.lastLocationId')).toBe('L1');
+  });
+
+  it('タイトルで結び付けた本は、その本の ID のまま登録する（タイトルで探し直さない）', async () => {
+    const zzz = book({ id: 'zzz', isbn: null, title: 'ももたろう', authors: ['B'] });
+    state.books = { data: [zzz], loading: false, error: null };
+    api.findBookForCandidate.mockResolvedValue(zzz);
+    api.upsertBookFromCandidate.mockImplementation(
+      async (_gid: string, _c: BookCandidate, _s: unknown, opts?: { bookId?: string | null }) => opts?.bookId ?? 'aaa',
+    );
+    renderAt('/borrow/confirm');
+    act(() => {
+      cart.addCandidate(cand({ isbn: null, title: 'ももたろう', authors: ['B'], source: 'manual' }));
+    });
+    await flush();
+    expect(screen.getByText('同じタイトルの登録済みの本')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '1冊を登録する' }));
+    await flush();
+    expect(api.upsertBookFromCandidate.mock.calls[0][3]).toEqual({ bookId: 'zzz', forceNew: false });
+    const inputs = api.createLoans.mock.calls[0][2] as { bookId: string }[];
+    expect(inputs[0].bookId).toBe('zzz');
+  });
+
+  it('タイトルで結び付けた本は「別の本として登録」で外し、新しい本として登録する', async () => {
+    const other = book({ id: 'isbn-9784834000000', isbn: '9784834000000', title: 'ももたろう', authors: [] });
+    state.books = { data: [other], loading: false, error: null };
+    api.findBookForCandidate.mockResolvedValue(other);
+    api.upsertBookFromCandidate.mockImplementation(
+      async (_gid: string, _c: BookCandidate, _s: unknown, opts?: { bookId?: string | null }) => opts?.bookId ?? 'new-book',
+    );
+    renderAt('/borrow/confirm');
+    act(() => {
+      cart.addCandidate(cand({ isbn: null, title: 'ももたろう', authors: [], publisher: null, source: 'manual' }));
+    });
+    await flush();
+    fireEvent.click(screen.getByRole('button', { name: '別の本として登録' }));
+    expect(screen.queryByText('同じタイトルの登録済みの本')).toBeNull();
+    expect(screen.getByText(/別の本として、新しく登録します/)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '1冊を登録する' }));
+    await flush();
+    expect(api.upsertBookFromCandidate.mock.calls[0][3]).toEqual({ bookId: null, forceNew: true });
+    expect(api.upsertBookFromCandidate.mock.calls[0][1]).toMatchObject({ isbn: null, title: 'ももたろう', publisher: null });
+    const inputs = api.createLoans.mock.calls[0][2] as { bookId: string }[];
+    expect(inputs[0].bookId).toBe('new-book');
   });
 
   it('返却日を手で変えたら場所を変えても保ち、自動計算に戻せる。個別の返却日も使う', async () => {
@@ -448,6 +625,98 @@ describe('BorrowConfirmPage', () => {
     await flush();
     expect(screen.getByText(/この本はいま貸出中です（はなこ・中央図書館・11月20日/)).toBeTruthy();
     expect(screen.getByText(/前回：2025年3月2日 中央図書館 はなこ（読んだ）（これまでに2回）/)).toBeTruthy();
+  });
+
+  it('ISBN なしで登録した同じタイトルの本があれば「同じ本ですか？」と聞き、選べばその本の貸出として登録する', async () => {
+    const handTitle = 'おしりたんてい ププッ ゆうれいなんてこわくない';
+    state.books = {
+      data: [book({ id: 'm1', isbn: null, title: handTitle, authors: [], source: 'manual' })],
+      loading: false,
+      error: null,
+    };
+    state.bookLoans = {
+      data: [loan('m-old', { bookId: 'm1', book: { title: handTitle, authors: [], coverUrl: null, isbn: null } })],
+      loading: false,
+      error: null,
+    };
+    api.lookupByIsbn.mockResolvedValue(
+      cand({ isbn: ISBN2, title: 'おしりたんてい ププッゆうれいなんてこわくない', seriesName: 'おしりたんてい', volume: 3 }),
+    );
+    api.upsertBookFromCandidate.mockImplementation(async (_gid: string, c: BookCandidate) =>
+      c.isbn ? `isbn-${c.isbn}` : 'm1',
+    );
+    renderAt('/borrow/confirm');
+    act(() => {
+      cart.addIsbn(ISBN2);
+      cart.update(ISBN2, { dueOnOverride: '2026-12-01' });
+    });
+    await flush();
+    const hint = screen.getByRole('group', { name: '同じタイトルの本の確認' });
+    expect(within(hint).getByText('ISBN なしで登録した同じタイトルの本があります。同じ本ですか？')).toBeTruthy();
+    expect(within(hint).getByText(/前回：2025年3月2日 中央図書館 はなこ（読んだ）/)).toBeTruthy();
+    // ISBN の本としてはまだ借りたことが無い
+    expect(screen.queryByText(/借りたことがあります。前回/)).toBeNull();
+
+    fireEvent.click(within(hint).getByRole('button', { name: `「${handTitle}」と同じ本として借りる` }));
+    await flush();
+    expect(cart.items).toHaveLength(1);
+    expect(cart.items[0]).toMatchObject({
+      existingBookId: 'm1',
+      isbn: null,
+      seriesName: 'おしりたんてい',
+      volume: 3,
+      dueOnOverride: '2026-12-01',
+    });
+    expect(screen.queryByRole('group', { name: '同じタイトルの本の確認' })).toBeNull();
+    // 前の本の履歴が F-27 の注意として出る
+    expect(screen.getByText(/借りたことがあります。前回：2025年3月2日 中央図書館 はなこ（読んだ）/)).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: '1冊を登録する' }));
+    await flush();
+    expect(api.upsertBookFromCandidate.mock.calls[0][1]).toMatchObject({ isbn: null, title: handTitle });
+    const inputs = api.createLoans.mock.calls[0][2] as { bookId: string; dueOn: string }[];
+    expect(inputs[0]).toMatchObject({ bookId: 'm1', dueOn: '2026-12-01' });
+  });
+
+  it('同じタイトルの本の確認で「別の本」を選べば、ISBN の本として新しく登録する', async () => {
+    state.books = {
+      data: [book({ id: 'm1', isbn: null, title: 'からすのパンやさん', source: 'manual' })],
+      loading: false,
+      error: null,
+    };
+    state.active = {
+      data: [loan('now', { bookId: 'm1', borrowerUid: 'u2', returnedOn: null, readStatus: null, dueOn: '2026-11-20' })],
+      loading: false,
+      error: null,
+    };
+    api.lookupByIsbn.mockResolvedValue(cand({ isbn: ISBN2, title: 'からすのパンやさん' }));
+    renderAt('/borrow/confirm');
+    act(() => {
+      cart.addIsbn(ISBN2);
+    });
+    await flush();
+    const hint = screen.getByRole('group', { name: '同じタイトルの本の確認' });
+    expect(within(hint).getByText(/いま貸出中（はなこ・中央図書館・11月20日/)).toBeTruthy();
+    fireEvent.click(within(hint).getByRole('button', { name: '別の本（このまま新しく登録する）' }));
+    expect(screen.queryByRole('group', { name: '同じタイトルの本の確認' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '1冊を登録する' }));
+    await flush();
+    const inputs = api.createLoans.mock.calls[0][2] as { bookId: string }[];
+    expect(inputs[0].bookId).toBe(`isbn-${ISBN2}`);
+  });
+
+  it('借りた日を今日より後にすると登録できない', async () => {
+    renderAt('/borrow/confirm');
+    act(() => {
+      cart.addCandidate(cand());
+    });
+    await flush();
+    fireEvent.change(screen.getByLabelText(/^借りた日必須/), { target: { value: '2026-11-28' } });
+    expect(screen.getByText('今日より後の日付は選べません')).toBeTruthy();
+    expect(screen.getByText('借りた日は今日以前にしてください')).toBeTruthy();
+    expect(screen.getByRole('button', { name: '1冊を登録する' })).toHaveProperty('disabled', true);
+    fireEvent.change(screen.getByLabelText(/^借りた日必須/), { target: { value: '2026-11-07' } });
+    expect(screen.getByRole('button', { name: '1冊を登録する' })).toHaveProperty('disabled', false);
   });
 
   it('登録に失敗したらカートを残してエラーを出す', async () => {

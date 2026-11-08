@@ -248,6 +248,22 @@ button.cell:active {
   text-align: center;
 }
 
+/* 前に読んだ巻を読み返すために借りている（貸出中の色のまま、左上に読んだ印） */
+.cellReadMark {
+  position: absolute;
+  top: -7px;
+  left: -7px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--color-bg);
+  border-radius: var(--radius-full);
+  background: var(--color-primary);
+  color: var(--color-primary-contrast);
+}
+
 /* ---- 凡例 ---- */
 .legend {
   display: flex;
@@ -277,6 +293,26 @@ button.cell:active {
 .legendCount {
   color: var(--color-text-tertiary);
   font-variant-numeric: tabular-nums;
+}
+
+.legendNote {
+  padding: 0 var(--space-1);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-xs);
+  line-height: 1.6;
+}
+
+.legendReadMark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  margin-right: 2px;
+  border-radius: var(--radius-full);
+  background: var(--color-primary);
+  color: var(--color-primary-contrast);
+  vertical-align: -3px;
 }
 
 /* ---- 一覧 ---- */

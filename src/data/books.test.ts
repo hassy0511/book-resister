@@ -156,10 +156,38 @@ describe('sortBooksByVolume', () => {
 });
 
 describe('pickTitleMatch', () => {
-  it('ISBN なしの本を優先する', () => {
+  it('ISBN なしの本を優先する（バーコードが隠れて手入力した本は ISBN の本にも結び付く）', () => {
     expect(pickTitleMatch([{ id: 'a', isbn: '9784591000000' }, { id: 'b', isbn: null }])?.id).toBe('b');
     expect(pickTitleMatch([{ id: 'a', isbn: '9784591000000' }])?.id).toBe('a');
+    expect(pickTitleMatch([{ id: 'a', isbn: '9784591000000', authors: ['なかがわ りえこ'] }], { authors: [] })?.id).toBe(
+      'a',
+    );
     expect(pickTitleMatch([])).toBeNull();
+  });
+
+  it('両方に著者があり 1 人も重ならない本には結び付けない（同じ題名の別の版の昔話など）', () => {
+    const list = [{ id: 'isbn-1', isbn: '9784834000825', authors: ['なかがわ りえこ'], volume: null }];
+    expect(pickTitleMatch(list, { authors: ['べつの さっか'], volume: null })).toBeNull();
+    // 全角半角・空白の違いは同じ著者とみなす
+    expect(pickTitleMatch(list, { authors: ['なかがわりえこ'], volume: null })?.id).toBe('isbn-1');
+  });
+
+  it('両方に巻数があって違う本には結び付けない（月刊絵本の号など）', () => {
+    const list = [{ id: 'apr', isbn: null, authors: [], volume: 4 }];
+    expect(pickTitleMatch(list, { authors: [], volume: 5 })).toBeNull();
+    expect(pickTitleMatch(list, { authors: [], volume: 4 })?.id).toBe('apr');
+    // 片方に巻数が無ければ除かない
+    expect(pickTitleMatch(list, { authors: [], volume: null })?.id).toBe('apr');
+  });
+
+  it('複数あれば著者が重なる本を、先に見つかった本より優先する', () => {
+    const list = [
+      { id: 'aaa', isbn: null, authors: [], volume: null },
+      { id: 'zzz', isbn: null, authors: ['B'], volume: null },
+      { id: 'isbn', isbn: '9784591000000', authors: ['B'], volume: null },
+    ];
+    expect(pickTitleMatch(list, { authors: ['B'], volume: null })?.id).toBe('zzz');
+    expect(pickTitleMatch(list, { authors: [], volume: null })?.id).toBe('aaa');
   });
 });
 

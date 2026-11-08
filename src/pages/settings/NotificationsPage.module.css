@@ -124,6 +124,33 @@
   color: var(--color-info);
 }
 
+/* 一覧に見つからないとき（上から順に試す。削除して追加し直すのは最後） */
+.troubleTitle {
+  margin-top: var(--space-5);
+}
+
+.trouble {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: var(--space-3) var(--space-4) var(--space-3) calc(var(--space-4) + 1.2em);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-sm);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  line-height: 1.6;
+  list-style: decimal;
+}
+
+.inAppHint {
+  margin-top: var(--space-3);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  line-height: 1.6;
+}
+
 /* ---- 図（iPhone の画面の一部を模したもの） ---- */
 .figure {
   margin-top: var(--space-3);

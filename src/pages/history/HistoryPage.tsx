@@ -4,11 +4,13 @@
  *   - 場所・借りた人・期間・状態で絞り込み（URL のクエリに持つので、本の詳細から戻っても保たれる）
  *   - 100 件ずつ表示し「もっと見る」で増やす（表示件数とスクロール位置も戻ったときに復元する）
  *   - 行をタップすると本の詳細へ
+ * 読み取りの回数を記録の件数に比例させないため、最初は新しい順に 1 ページ分だけ読み、期間で絞り込めばその期間だけ、
+ * 全期間の検索・絞り込み・「もっと見る」・絞り込みシートでは全件を読む（historyScopeFor）。
  */
 import { memo, useCallback, useDeferredValue, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import type { DateString, Loan, WithId } from '../../types';
-import { useAllLoans } from '../../data/loans';
+import { useHistoryLoans, type HistoryScope } from '../../data/loans';
 import { useLocations } from '../../data/locations';
 import { useGroup } from '../../group/GroupProvider';
 import { formatDate } from '../../lib/date';
@@ -44,8 +46,10 @@ import {
   filterFromParams,
   filterHistory,
   groupByMonth,
+  historyScopeFor,
   historyStateOf,
   monthKeyOf,
+  needsAllLoans,
   type FilterDimension,
   type HistoryFilter,
   type HistoryState,
@@ -56,6 +60,7 @@ import { useListMemory } from './useListMemory';
 import styles from './HistoryPage.module.css';
 
 const UNKNOWN_LOCATION = '（不明な場所）';
+const EMPTY_LOANS: WithId<Loan>[] = [];
 
 const PERIOD_OPTIONS: SegmentOption<PeriodKind>[] = (['thisYear', 'lastYear', 'all', 'range'] as const).map((value) => ({
   value,
@@ -64,9 +69,10 @@ const PERIOD_OPTIONS: SegmentOption<PeriodKind>[] = (['thisYear', 'lastYear', 'a
 
 type HistoryLoan = WithId<Loan>;
 
+type LoadedLoans = { scope: HistoryScope; data: HistoryLoan[]; error: Error | null };
+
 export default function HistoryPage() {
   const { members, memberName } = useGroup();
-  const loansQuery = useAllLoans();
   const locationsQuery = useLocations({ includeArchived: true });
   const today = useToday();
 
@@ -78,14 +84,35 @@ export default function HistoryPage() {
   const deferredQuery = useDeferredValue(query);
   const terms = useMemo(() => parseSearchQuery(deferredQuery), [deferredQuery]);
 
-  const loading = loansQuery.loading || locationsQuery.loading;
-  const error = loansQuery.error ?? locationsQuery.error;
-
   const anchorRef = useRef<HTMLDivElement>(null);
-  const [visible, setVisible] = useListMemory('history', PAGE_SIZE, anchorRef, !loading);
   const [sheetOpen, setSheetOpen] = useState(false);
+  // 読み込みが終わるまで表示件数・スクロール位置の復元を待つ（下の ready）
+  const [ready, setReady] = useState(false);
+  const [visible, setVisible] = useListMemory('history', PAGE_SIZE, anchorRef, ready);
 
-  const loans = loansQuery.data;
+  // ---- 読む範囲（全件を読むのは必要なときだけ。一度読んだらこの画面にいる間は全件のまま） ----
+  const wantAll = needsAllLoans({ filter, hasTerms: terms.length > 0, visible, sheetOpen });
+  const [allLoaded, setAllLoaded] = useState(false);
+  if (wantAll && !allLoaded) setAllLoaded(true);
+  const scope = historyScopeFor(filter, today, wantAll || allLoaded);
+  const loansQuery = useHistoryLoans(scope);
+
+  // 範囲を切り替えて読み込んでいる間は、前に読んだ内容を表示しておく（検索欄などが消えないように）
+  const [loaded, setLoaded] = useState<LoadedLoans | null>(null);
+  if (!loansQuery.loading && (loaded === null || loaded.data !== loansQuery.data || loaded.error !== loansQuery.error)) {
+    setLoaded({ scope, data: loansQuery.data, error: loansQuery.error });
+  }
+  const refreshing = loansQuery.loading && loaded !== null;
+
+  const loading = (loansQuery.loading && loaded === null) || locationsQuery.loading;
+  const error = (loaded?.error ?? null) ?? locationsQuery.error;
+  if (!loading && !ready) setReady(true);
+
+  const loadedScope = loaded?.scope ?? scope;
+  const allLoans = loaded?.data ?? EMPTY_LOANS;
+  // 新しい順に 1 ページ分＋1 件だけ読んだとき、続きがあるか
+  const hasMore = loadedScope.kind === 'recent' && allLoans.length > PAGE_SIZE;
+  const loans = useMemo(() => (hasMore ? allLoans.slice(0, PAGE_SIZE) : allLoans), [hasMore, allLoans]);
   const locations = locationsQuery.data;
 
   const locationNames = useMemo(() => new Map(locations.map((l) => [l.id, l.name])), [locations]);
@@ -162,7 +189,8 @@ export default function HistoryPage() {
     body = <Spinner center size="lg" label="履歴を読み込んでいます" />;
   } else if (error) {
     body = <ErrorState error={error} onRetry={() => window.location.reload()} />;
-  } else if (loans.length === 0) {
+  } else if (loans.length === 0 && loadedScope.kind !== 'range') {
+    // 期間だけ読んだときは、その期間に無いだけかもしれないので下の「条件に合う記録はありません」を出す
     body = (
       <EmptyState
         icon={<HistoryIcon />}
@@ -197,7 +225,18 @@ export default function HistoryPage() {
 
         <div className={styles.toolbar}>
           <p className={styles.count} aria-live="polite">
-            {hasCondition ? (
+            {refreshing ? <Spinner size="sm" label="記録を読み込んでいます" /> : null}
+            {hasMore ? (
+              // 新しい順に 1 ページ分だけ読んでいる（全体の件数はまだ分からない）
+              <>
+                最近の<strong>{loans.length}</strong>件
+              </>
+            ) : loadedScope.kind === 'range' ? (
+              // 期間で絞り込んだときは、その期間の記録だけを読んでいる
+              <>
+                <strong>{filtered.length}</strong>件
+              </>
+            ) : hasCondition ? (
               <>
                 <strong>{filtered.length}</strong>件<span className={styles.countTotal}>／全{loans.length}件</span>
               </>
@@ -235,7 +274,9 @@ export default function HistoryPage() {
           </div>
         ) : null}
 
-        {filtered.length === 0 ? (
+        {filtered.length === 0 && refreshing ? (
+          <Spinner center size="lg" label="履歴を読み込んでいます" />
+        ) : filtered.length === 0 ? (
           <Card>
             <EmptyState
               compact
@@ -251,13 +292,16 @@ export default function HistoryPage() {
           </Card>
         ) : (
           <>
-            {groups.map((g) => {
+            {groups.map((g, index) => {
               const headingId = `history-month-${g.key || 'none'}`;
+              const count = monthCounts.get(g.key) ?? g.loans.length;
+              // 1 ページ分だけ読んだときの最後の月は、まだ読んでいない記録があるかもしれない
+              const partial = hasMore && index === groups.length - 1;
               return (
                 <section key={g.key} className={styles.month} aria-labelledby={headingId}>
                   <h2 id={headingId} className={styles.monthHeading}>
                     <span>{g.label}</span>
-                    <span className={styles.monthCount}>{monthCounts.get(g.key) ?? g.loans.length}件</span>
+                    <span className={styles.monthCount}>{partial ? `${count}件以上` : `${count}件`}</span>
                   </h2>
                   <Card padded={false}>
                     <ul className={styles.list}>
@@ -276,10 +320,17 @@ export default function HistoryPage() {
                 </section>
               );
             })}
-            {shown.length < filtered.length ? (
+            {hasMore ? (
+              // 押すと全件を読む
+              <Button variant="secondary" block size="lg" onClick={() => setVisible((v) => v + PAGE_SIZE)}>
+                もっと見る
+              </Button>
+            ) : shown.length < filtered.length ? (
               <Button variant="secondary" block size="lg" onClick={() => setVisible((v) => v + PAGE_SIZE)}>
                 もっと見る（残り{filtered.length - shown.length}件）
               </Button>
+            ) : refreshing ? (
+              <Spinner center label="履歴を読み込んでいます" />
             ) : (
               <p className={styles.end}>これより前の記録はありません</p>
             )}

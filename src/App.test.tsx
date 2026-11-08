@@ -2,7 +2,7 @@
 /* App のルーティングとガードのテスト（認証・グループ・画面はモック） */
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 
 const state = vi.hoisted(() => ({
   configured: true,
@@ -67,8 +67,12 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  vi.restoreAllMocks();
   delete document.documentElement.dataset.tabbar;
 });
+
+const LINE_UA =
+  'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 Safari Line/14.9.0';
 
 describe('App のガード', () => {
   it('Firebase 未設定ならセットアップ案内', () => {
@@ -101,6 +105,58 @@ describe('App のガード', () => {
     expect(await screen.findByText('PAGE:join')).toBeTruthy();
     expect(window.location.pathname).toBe('/join/abc123');
     expect(sessionStorage.getItem('returnTo')).toBeNull();
+  });
+
+  it('招待リンクの戻り先は /login?next= にも載せる（Safari に移って sessionStorage が無くても戻れる）', async () => {
+    const view = renderAt('/join/abc123?openExternalBrowser=1');
+    expect(await screen.findByText('PAGE:login')).toBeTruthy();
+    expect(window.location.pathname).toBe('/login');
+    expect(new URLSearchParams(window.location.search).get('next')).toBe('/join/abc123?openExternalBrowser=1');
+    view.unmount();
+
+    // 別のブラウザ（sessionStorage が空）で /login?next=... を開いてログインした
+    sessionStorage.clear();
+    const second = renderAt('/login?next=%2Fjoin%2Fabc123');
+    expect(await screen.findByText('PAGE:login')).toBeTruthy();
+    expect(sessionStorage.getItem('returnTo')).toBe('/join/abc123');
+    second.unmount();
+
+    sessionStorage.clear();
+    state.auth = { user: { uid: 'u1' }, loading: false };
+    renderAt('/login?next=%2Fjoin%2Fabc123');
+    expect(await screen.findByText('PAGE:join')).toBeTruthy();
+    expect(window.location.pathname).toBe('/join/abc123');
+  });
+
+  it('next に招待リンク以外・外部 URL を入れても使わない', async () => {
+    state.auth = { user: { uid: 'u1' }, loading: false };
+    state.group = { loading: false, groupId: 'g1', error: null };
+    const view = renderAt('/login?next=%2Fsettings');
+    expect(await screen.findByText('PAGE:home')).toBeTruthy();
+    view.unmount();
+    renderAt('/login?next=%2F%2Fevil.example.com%2Fjoin%2Fx');
+    expect(await screen.findByText('PAGE:home')).toBeTruthy();
+    expect(window.location.pathname).toBe('/');
+  });
+
+  it('LINE などのアプリ内ブラウザで招待リンクを開いたら、ログイン画面へ移る前に Safari で開くよう案内する', async () => {
+    vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue(LINE_UA);
+    renderAt('/join/abc123');
+    expect(await screen.findByText('LINE の中のブラウザで開いています')).toBeTruthy();
+    // アドレス欄は招待リンクのまま（メニューの「Safari で開く」でそのまま参加の画面へ進める）
+    expect(window.location.pathname).toBe('/join/abc123');
+    expect(sessionStorage.getItem('returnTo')).toBe('/join/abc123');
+    expect(screen.queryByText('PAGE:login')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'このままメールアドレスでログインする' }));
+    expect(await screen.findByText('PAGE:login')).toBeTruthy();
+    expect(window.location.pathname).toBe('/login');
+  });
+
+  it('アプリ内ブラウザでも招待リンク以外はそのままログイン画面へ', async () => {
+    vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue(LINE_UA);
+    renderAt('/history');
+    expect(await screen.findByText('PAGE:login')).toBeTruthy();
   });
 
   it('ログイン済みで /login に来たら / へ', async () => {

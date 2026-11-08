@@ -3,11 +3,13 @@
  *   - 名前、借りた巻数／全巻数（分かれば）、読んだ巻数、最後に借りた日
  *   - 最後に借りた日の新しい順（借りていないシリーズは後ろで名前順）
  *   - 名前で検索（ひらがな／カタカナ、全角／半角の揺れを吸収）
+ * 本はシリーズに入っている本だけを読む（useSeriesBooks）。貸出記録は全件を読む（最後に借りた日・読んだ巻数の集計に
+ * シリーズの本の貸出がほぼすべて要り、本ごとの in クエリに分けるとリスナーが本の冊数に比例して増えるため）。
  */
 import { useDeferredValue, useMemo, useState, type FormEvent, type ReactNode } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import type { Book, Series, WithId } from '../../types';
-import { useBooks } from '../../data/books';
+import { useSeriesBooks } from '../../data/books';
 import { useAllLoans } from '../../data/loans';
 import { useSeriesList } from '../../data/series';
 import { formatDate } from '../../lib/date';
@@ -22,7 +24,7 @@ type Row = SeriesSummary<WithId<Series>, WithId<Book>>;
 
 export default function SeriesListPage() {
   const seriesQuery = useSeriesList();
-  const booksQuery = useBooks();
+  const booksQuery = useSeriesBooks();
   const loansQuery = useAllLoans();
 
   const [searchParams, setSearchParams] = useSearchParams();

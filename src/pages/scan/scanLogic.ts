@@ -31,11 +31,14 @@ export function formatVolumeRanges(volumes: readonly number[]): string {
 export type SeriesSummary = {
   /** 借りたことがある巻（巻数のある本のみ） */
   borrowedVolumes: number[];
-  /** 読んだ巻 */
+  /**
+   * 一度でも「読んだ」で返却した巻（いま読み返すために借りている巻も含む。
+   * シリーズ一覧・シリーズ詳細の「読んだ N巻」と同じ数え方）
+   */
   readVolumes: number[];
-  /** 途中まで／読んでいない巻 */
+  /** 返却済みで、まだ一度も「読んだ」になっていない巻（途中まで／読んでいない） */
   notFinishedVolumes: number[];
-  /** いま借りている巻 */
+  /** いま借りている巻（前に読んだ巻なら readVolumes にも入る） */
   readingVolumes: number[];
   /**
    * まだ借りていない巻。全巻数があれば 1〜全巻数のうち借りていない巻、
@@ -60,21 +63,24 @@ export function summarizeSeries(input: {
     else loansByBook.set(l.bookId, [l]);
   }
 
-  // 巻ごとの状態（同じ巻の本が複数あれば良いほうを採る）
+  // 巻ごとの状態（同じ巻の本が複数あれば良いほうを採る）と、一度でも「読んだ」で返却したか
   const RANK: Record<BookReadState, number> = { none: 0, unread: 1, partial: 2, read: 3, reading: 4 };
   const byVolume = new Map<number, BookReadState>();
+  const everReadVolumes = new Set<number>();
   let borrowedBookCount = 0;
   for (const b of input.books) {
-    const state = bookReadState(loansByBook.get(b.id) ?? []);
+    const loans = loansByBook.get(b.id) ?? [];
+    const state = bookReadState(loans);
     if (state !== 'none') borrowedBookCount += 1;
     if (b.volume == null) continue;
     const prev = byVolume.get(b.volume);
     if (prev === undefined || RANK[state] > RANK[prev]) byVolume.set(b.volume, state);
+    if (loans.some((l) => l.returnedOn !== null && l.readStatus === 'read')) everReadVolumes.add(b.volume);
   }
 
-  const pick = (pred: (s: BookReadState) => boolean) =>
+  const pick = (pred: (s: BookReadState, volume: number) => boolean) =>
     Array.from(byVolume.entries())
-      .filter(([, s]) => pred(s))
+      .filter(([v, s]) => pred(s, v))
       .map(([v]) => v)
       .sort((a, b) => a - b);
 
@@ -87,8 +93,8 @@ export function summarizeSeries(input: {
 
   return {
     borrowedVolumes,
-    readVolumes: pick((s) => s === 'read'),
-    notFinishedVolumes: pick((s) => s === 'partial' || s === 'unread'),
+    readVolumes: pick((_, v) => everReadVolumes.has(v)),
+    notFinishedVolumes: pick((s, v) => (s === 'partial' || s === 'unread') && !everReadVolumes.has(v)),
     readingVolumes: pick((s) => s === 'reading'),
     notBorrowedVolumes,
     total,

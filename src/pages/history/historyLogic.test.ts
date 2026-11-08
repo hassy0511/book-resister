@@ -8,8 +8,10 @@ import {
   filterFromParams,
   filterHistory,
   groupByMonth,
+  historyScopeFor,
   historyStateOf,
   monthLabel,
+  needsAllLoans,
   periodRange,
   type HistoryFilter,
 } from './historyLogic';
@@ -222,5 +224,37 @@ describe('countBy', () => {
         ['b', 1],
       ]),
     );
+  });
+});
+
+describe('履歴で読む範囲', () => {
+  const today = '2026-11-08';
+
+  it('条件が無ければ新しい順に 1 ページ分＋1 件だけ読む', () => {
+    expect(historyScopeFor(EMPTY_FILTER, today, false)).toEqual({ kind: 'recent', count: 101 });
+  });
+
+  it('期間で絞り込めばその期間だけ読む（検索・他の絞り込みはその中で行う）', () => {
+    expect(historyScopeFor({ ...EMPTY_FILTER, period: 'thisYear' }, today, true)).toEqual({
+      kind: 'range',
+      from: '2026-01-01',
+      to: '2026-12-31',
+    });
+    expect(historyScopeFor({ ...EMPTY_FILTER, period: 'range', from: '2025-05-01', to: '' }, today, false)).toEqual({
+      kind: 'range',
+      from: '2025-05-01',
+      to: null,
+    });
+  });
+
+  it('全期間の検索・絞り込み・2 ページ目以降・絞り込みシートでは全件を読む', () => {
+    const base = { filter: EMPTY_FILTER, hasTerms: false, visible: 100, sheetOpen: false };
+    expect(needsAllLoans(base)).toBe(false);
+    expect(needsAllLoans({ ...base, hasTerms: true })).toBe(true);
+    expect(needsAllLoans({ ...base, filter: { ...EMPTY_FILTER, locationId: 'L1' } })).toBe(true);
+    expect(needsAllLoans({ ...base, filter: { ...EMPTY_FILTER, state: 'read' } })).toBe(true);
+    expect(needsAllLoans({ ...base, visible: 200 })).toBe(true);
+    expect(needsAllLoans({ ...base, sheetOpen: true })).toBe(true);
+    expect(historyScopeFor(EMPTY_FILTER, today, true)).toEqual({ kind: 'all' });
   });
 });

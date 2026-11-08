@@ -72,7 +72,12 @@ tests/rules/               Firestore セキュリティルールのテスト
 | 巻数 | 0〜99999 の整数 |
 | 感想 / 評価 | 2000 文字 / 1〜5 の整数 |
 | 招待コード / 有効期限 | `^[A-Za-z0-9_-]{16,64}$` / 作成時刻 + 8 日以内（端末の時計のずれを見込む） |
-- **複合インデックスは使わない。** クエリは単一フィールドの条件か並び替えのみとし、残りはクライアントで絞り込む・並べ替える（家族規模なので件数は少ない）。
+- **複合インデックスは使わない。** クエリは単一フィールドの条件か並び替えのみとし、残りはクライアントで絞り込む・並べ替える。
+- **読み取りの回数（Spark の無料枠は 5 万回／日）。** 購読は画面ごとに付け外しされ、前回から 30 分以上空けて購読し直すと結果の全件分が読み取りとして数えられる（`persistentLocalCache` の差分の読み取りは 30 分以内だけ）。貸出記録は削除しないので年 1,000 件ずつ増え続ける。そのため、コレクション全件の購読は全件が本当に必要な画面だけにする。
+  - 既読チェック: ISBN から決まる ID の 1 冊（`useBook`）・同じシリーズの本（`useBooksInSeries`）・ISBN なしの本（`useBooksWithoutIsbn`）だけ。借りる確認: カートの本（`useBooksByIds`）と ISBN なしの本だけ。
+  - 履歴: 最初は借りた日の新しい順に 1 ページ分（101 件）、期間で絞り込めばその期間だけ、全期間の検索・絞り込み・「もっと見る」・絞り込みシートで全件（`useHistoryLoans`）。F-60〜62 のとおり、全期間の検索・絞り込みは全件を対象にする。
+  - 全件を読むのは、シリーズ一覧（シリーズに入っている本 `useSeriesBooks` ＋ 貸出記録の全件。集計に要るため）、履歴の全期間の検索など、本の追加（タイトルの部分一致に本の全件）。
+  - 目安: 30 分以上空けて開くたびに「シリーズ一覧＝シリーズ数＋シリーズの本の冊数＋貸出記録数」「履歴の全期間の検索＝貸出記録数」「本の追加＝本の冊数」。貸出記録が数千件になり使用量が上限に近づいたら（手順書 13 章）、シリーズ文書に集計値を持たせる非正規化などを検討する（Cloud Functions が無いので、貸出の登録・返却・取り消し・編集・削除のすべてでクライアントから整合させる必要がある）。
 - `Loan.book` は本情報のコピー。`updateBook` で本を編集したら、その本の貸出記録の `book` も一括更新する。
 
 ## 4. モジュールの公開 API
@@ -156,7 +161,7 @@ export const isFirebaseConfigured: boolean // VITE_FIREBASE_* が揃っている
 <AuthProvider>
 useAuth(): {
   user: User | null; loading: boolean;
-  signInWithGoogle(): Promise<void>;            // popup → 失敗（popup-blocked 等）時は redirect にフォールバック
+  signInWithGoogle(): Promise<void>;            // popup → 失敗（popup-blocked 等）時は redirect にフォールバック。iOS のホーム画面のアプリ（standalone）は最初から redirect
   signInWithEmail(email: string, password: string): Promise<void>;
   signUpWithEmail(email: string, password: string): Promise<void>;
   sendPasswordReset(email: string): Promise<void>;
@@ -166,6 +171,8 @@ useAuth(): {
 ```
 
 - 失敗時は日本語メッセージの Error を投げる（元の `code` と `cause` を保持）。利用者が Google のポップアップを自分で閉じた場合はエラーにしない。
+- iOS のホーム画面のアプリ（`isIos() && isStandalone()`）では、Firebase がポップアップの代わりにアプリ内ブラウザのシートを開き、ブロックも「閉じた」ことも検知できない（結果も戻らないことがある）ため、最初から `signInWithRedirect` を使う（authDomain をアプリと同じドメインにしているので同じ保存領域に戻る）。新しい呼び出しで取り消された前の呼び出し（`cancelled-popup-request`）はリダイレクトに切り替えず、何もせず終える。
+- ログイン画面は、Google の待ち中でもメールアドレスの欄とボタンを使えるようにし、「キャンセル」で待つのをやめられる（ほかの環境でポップアップの結果が戻らない場合に備える。一定時間での打ち切りはしない。Google のパスワードを入力中の人を待たせないため）。
 - ログイン画面はログイン成功後に navigate しない（App の `/login` ルートが戻り先へ移す）。
 
 ### 4.8 `src/group/GroupProvider.tsx`
@@ -198,6 +205,9 @@ useRequiredGroup(): { groupId: string; uid: string; ... }  // グループ参加
 フックは `useRequiredGroup()` から groupId を取る。書き込み関数は第 1 引数に `groupId` を取る。
 
 - 書き込み関数はサーバーの応答を最大 4 秒待ち、それを過ぎたら（またはオフラインなら）端末に保存済みとして完了する（後で自動送信）。待ち時間内に返ったエラー（権限など）は日本語の Error で投げる。`createGroup` / `joinGroup` は常にサーバーの保存を待ち、`createInvite` は最大 15 秒待つ。
+  - 共通の `settleWrite(write, { ignoreError? }): Promise<'confirmed' | 'local'>`（`common.ts`）。一度 4 秒を過ぎたら 30 秒は長くは待たない（電波の弱い所で何度も待たせない）が、その間とオフラインのときも 50 ミリ秒だけ待ち、すぐ返る拒否は投げる。書き込みが成功しても拒否されても（＝サーバーに届いている）30 秒の待たない期間を終える。
+  - 完了扱いにした後でサーバーに拒否された書き込みは、Firestore が端末からも取り消すため、`onLateWriteFailure` の登録先に知らせる。`GroupProvider` がトースト（「保存できなかった変更があります（理由）。内容を確かめて、もう一度入力してください。」）を出す。
+- 購読関数 `docSubscriber(ref, { missingAfterMs? })`: キャッシュに無いだけの「存在しない」はサーバーの応答を待つが、`missingAfterMs` を指定するとその時間で（オフラインならすぐに）「存在しない」とみなす（未登録の本を確認する既読チェックが読み込み中のままにならないように）。
 - 書き込み前に入力を確認し、不正なら日本語の Error を投げる（貸出期間 1〜365 の整数、評価 1〜5、日付は実在する YYYY-MM-DD、返却日は借りた日以降、名前・タイトルは必須、3 章の文字数の上限）。
 - 購読フックは permission-denied を数回（0.5〜6 秒）再試行する（グループ作成・参加の直後の反映待ち）。
 - `useBook` / `useLoan` / `useSeries` はキャッシュに無いだけの「存在しない」ではサーバーの応答を待つ。ID が不正なら `{ data: null, loading: false }`。
@@ -213,22 +223,37 @@ useSeriesList(): QueryResult<WithId<Series>[]>
 useSeries(seriesId: string | undefined): QueryResult<WithId<Series> | null>
 createSeries(gid, name: string, totalVolumes?: number | null): Promise<string>
 updateSeries(gid, id, patch: Partial<Pick<Series, 'name' | 'totalVolumes'>>): Promise<void>
-findOrCreateSeries(gid, name: string): Promise<string>   // normalizeSeriesName で既存と照合
+findOrCreateSeries(gid, name: string): Promise<string>   // normalizeSeriesName で既存と照合。無ければ seriesIdForName の ID で作る
+seriesIdForName(name: string): string | null              // 's-' + 正規化した名前のハッシュ（32 桁の 16 進）。2 台で同時に作っても 1 つにまとまる
+  // 別の端末が先に同じ ID で作っていると、この作成は更新として扱われルールで拒否される（createdAt が違う）。ID は同じなので成功とみなす
+  // その ID のシリーズが別の名前に変えられていればランダムな ID で作る。トランザクションはオフラインで使えないので使わない
+mergeSeries(gid, fromId: string, intoId: string): Promise<void>   // from の本を into に移して from を削除（writeBatch。全巻数は into、無ければ from の値）
+deleteSeries(gid, id: string, opts?: { detachBooks?: boolean }): Promise<void>  // 本があれば detachBooks のときだけ本の seriesId を null にして削除
 
 // books.ts
-useBook(bookId: string | undefined): QueryResult<WithId<Book> | null>
-useBooks(): QueryResult<WithId<Book>[]>                     // 全件（シリーズ一覧・検索用）
+useBook(bookId: string | undefined, opts?: { missingAfterMs?: number }): QueryResult<WithId<Book> | null>
+useBooks(): QueryResult<WithId<Book>[]>                     // 全件（本の追加のタイトル検索用。3 章の読み取りの回数を参照）
+useSeriesBooks(): QueryResult<WithId<Book>[]>               // seriesId != null の本だけ（シリーズ一覧）
+useBooksWithoutIsbn(enabled?: boolean): QueryResult<WithId<Book>[]>  // isbn == null の本だけ（同じタイトルの手がかり）
+useBooksByIds(bookIds: readonly string[]): QueryResult<WithId<Book>[]>  // ドキュメント ID の in クエリを 30 件ずつ（借りる確認）
 useBooksInSeries(seriesId: string | undefined): QueryResult<WithId<Book>[]>
 getBook(gid, bookId): Promise<WithId<Book> | null>
-findBookForCandidate(gid, c: BookCandidate): Promise<WithId<Book> | null> // ISBN なら ID で、無ければタイトル完全一致
-upsertBookFromCandidate(gid, c: BookCandidate, series: { seriesId: string | null; volume: number | null }): Promise<string>
+findBookForCandidate(gid, c: BookCandidate): Promise<WithId<Book> | null> // ISBN なら ID で、無ければタイトル完全一致（pickTitleMatch）
+  // pickTitleMatch: 両方に著者があり 1 人も重ならない本・両方に巻数があり値が違う本は除き、著者が重なる本 → ISBN なしの本 → 先の本の順に選ぶ
+  // （著者の一致は必須にしない。シールでバーコードが隠れた本の手入力はタイトルだけのことが多いため）
+upsertBookFromCandidate(gid, c: BookCandidate, series: { seriesId: string | null; volume: number | null }, opts?: UpsertBookOptions): Promise<string>
+saveBookFromCandidate(gid, c, series, opts?: UpsertBookOptions): Promise<{ id: string; existing: WithId<Book> | null }>
   // 既存があればその ID を返す（既存の空欄だけ補完し、シリーズ未設定なら設定）。無ければ作成
+  // opts.bookId: 結び付けた既存の本の ID（あればタイトルで探し直さない。見つからなければ通常の照合）
+  // opts.forceNew: タイトルでの照合をせず別の本として作る（ISBN の本は ID が決まるので無関係）
 updateBook(gid, bookId, patch: Partial<Pick<Book, 'title' | 'authors' | 'publisher' | 'coverUrl' | 'seriesId' | 'volume'>>): Promise<void>
   // 該当本の全 Loan の book スナップショットも更新（バッチ）
 
 // loans.ts
 useActiveLoans(): QueryResult<WithId<Loan>[]>               // returnedOn == null、dueOn 昇順
-useAllLoans(): QueryResult<WithId<Loan>[]>                  // 全件、borrowedOn 降順
+useAllLoans(): QueryResult<WithId<Loan>[]>                  // 全件、borrowedOn 降順（シリーズ一覧の集計用）
+useHistoryLoans(scope: HistoryScope): QueryResult<WithId<Loan>[]>  // 履歴用。borrowedOn 降順
+  // HistoryScope = { kind: 'recent'; count } (orderBy borrowedOn desc + limit) | { kind: 'range'; from; to } (borrowedOn の範囲) | { kind: 'all' }
 useLoansForBook(bookId: string | undefined): QueryResult<WithId<Loan>[]>  // borrowedOn 降順
 useLoansForBooks(bookIds: string[]): QueryResult<WithId<Loan>[]>          // シリーズ画面用（30 件ずつ in クエリ）
 useLoan(loanId: string | undefined): QueryResult<WithId<Loan> | null>
@@ -242,12 +267,15 @@ deleteLoan(gid, loanId): Promise<void>                              // 誤登録
 
 // invites.ts
 createInvite(gid, groupName: string, uid: string): Promise<{ code: string; url: string }>  // url = `${location.origin}/join/${code}`
+  // 家族に送るときは画面側（MembersPage の shareableInviteUrl）で ?openExternalBrowser=1 を付ける（5.1 参照）
 getInvite(code: string): Promise<WithId<Invite> | null>              // 期限切れは null
 
 // readStatus.ts（純粋関数）
 bookReadState(loans: Pick<Loan, 'returnedOn' | 'readStatus'>[]): BookReadState  // 'reading' | 'read' | 'partial' | 'unread' | 'none'
   // 貸出中があれば 'reading'、それ以外は返却済みの中で最良（read > partial > unread）、貸出なしは 'none'
   // 返却済みで readStatus が null の記録は 'unread'。表示名は BOOK_READ_STATE_LABELS（reading = 「貸出中」）
+  // 「読んだ巻」の数え方は別（everRead）: 一度でも「読んだ」で返却した巻は、いま読み返すために借りていても
+  // 「読んだ巻」に数える（シリーズ一覧・シリーズ詳細の要約・既読チェックの summarizeSeries で共通。5.1 参照）
 ```
 
 ### 4.10 `src/state/borrowCart.tsx`
@@ -259,7 +287,7 @@ useBorrowCart(): {
   addIsbn(isbn13: string): 'added' | 'duplicate';   // 書誌の取得はカート内で非同期に行う
   addCandidate(c: BookCandidate): 'added' | 'duplicate';
   addExistingBook(book: WithId<Book>): 'added' | 'duplicate';
-  update(key: string, patch: Partial<Pick<CartItem, 'seriesName' | 'volume' | 'dueOnOverride' | 'candidate'>>): void;
+  update(key: string, patch: Partial<Pick<CartItem, 'seriesName' | 'volume' | 'dueOnOverride' | 'candidate' | 'forceNew'>> & { existingBookId?: null }): void;
   remove(key: string): void;
   clear(): void;
 }
@@ -269,6 +297,9 @@ type CartItem = {                   // 型は src/state/borrowCartLogic.ts に�
   candidate: BookCandidate | null;  // not-found の場合は null（タイトル手入力を促す）
   isbn: string | null;
   existingBookId: string | null;
+  matchedBy: 'isbn' | 'title' | 'chosen' | null;  // 結び付けたきっかけ（ISBN の ID・タイトルの一致・利用者が選んだ本）
+  forceNew: boolean;                // 「別の本として登録」（タイトルで照合しない）
+  beforeMatch: { candidate; isbn; seriesName; volume } | null;  // タイトルで結び付ける前の内容（外すと戻す）
   seriesName: string | null;
   volume: number | null;
   dueOnOverride: DateString | null;
@@ -278,6 +309,8 @@ type CartItem = {                   // 型は src/state/borrowCartLogic.ts に�
 - BorrowCartProvider は `/login` を含む全ルートの外側にあるため、`useRequiredGroup()` ではなく `useGroup()` を使う（未参加ならグループの照合をしない）。
 - 別のグループのユーザーがログインしたらカートを空にする。読み込み中のまま再起動した項目は取得し直す。
 - 書誌が見つからない項目は、利用者がタイトルを入力しても status は 'not-found' のまま。登録できるのは「読み込み中でなく、タイトルのある candidate を持つ」項目（`isItemResolved`）。
+- タイトルの一致で既存の本に結び付けた項目（`matchedBy: 'title'`）は、借りる確認で「同じタイトルの登録済みの本」と示し、「別の本として登録」（`update(key, { forceNew: true })`）で外せる（結び付ける前の内容に戻す）。登録時は `existingBookId` があればその本を使い（`saveBookFromCandidate` の `bookId`）、`forceNew` ならタイトルで照合しない。
+- 重複の判定（`findDuplicate`）: 同じ ISBN・同じ既存の本・ISBN なしで同じタイトル。ただし ISBN なしで同じタイトルでも、巻数が両方あって違う場合（月刊絵本の号など）と、カートの側が `forceNew` の場合は別の本とみなす（登録時の照合とそろえ、1 冊に貸出が 2 件付かないようにする）。
 
 ### 4.11 UI 部品（`src/components/ui/`、`src/components/`）
 
@@ -319,12 +352,29 @@ type CartItem = {                   // 型は src/state/borrowCartLogic.ts に�
 
 下部タブ: ホーム（`/`）・スキャン（`/scan?mode=borrow`）・履歴（`/history`）・シリーズ（`/series`）・設定（`/settings`）。タブはログイン済みかつグループ参加済みの画面でのみ表示。
 
-ガード: 未ログイン → `/login`（`/join/:code` から来た場合はログイン後に戻す。戻り先は `sessionStorage` に保存。アプリ内のパスのみ）。ログイン済みでグループ未参加 → `/welcome`（`/join/:code` は除く）。グループ情報の読み込みが権限以外のエラーなら `/welcome` へ送らずエラーと再読み込みボタンを出す（グループの二重作成を防ぐ）。
+ガード: 未ログイン → `/login`（`/join/:code` から来た場合はログイン後に戻す。戻り先は `sessionStorage` に保存し、`/login?next=/join/...` として URL にも載せる。アプリ内ブラウザから Safari に移ると `sessionStorage` は引き継がれないため。`next` は `/join/` で始まるアプリ内のパスのみ）。LINE などのアプリ内ブラウザで未ログインのまま `/join/:code` を開いた場合は、`/login` へ移る前に「Safari で開いて」の案内を出す（アドレス欄に招待リンクを残すため。「このままメールアドレスでログインする」で `/login` へ進める）。ログイン済みでグループ未参加 → `/welcome`（`/join/:code` は除く）。グループ情報の読み込みが権限以外のエラーなら `/welcome` へ送らずエラーと再読み込みボタンを出す（グループの二重作成を防ぐ）。
 
 - `/welcome` はグループ参加済みでも表示できる（作成直後に「最初の場所の登録」へ進むため）。`/join/:code` も同様で、参加済み・別グループ参加中の案内は画面側で行う。
 - `/return` は `?loans` と `?location` の両方があれば `?loans` を優先する。ホームの「まとめて返却」は借りた人で絞り込み中なら `?loans=`（表示中の分だけ）にする。
 - ホームの絞り込みは URL（`?location=` / `?borrower=`）に、表示の切り替え（場所ごと／返却日順）は localStorage に保存する。履歴の検索語・絞り込みも URL に保存する。
 - `/scan`・`/borrow/confirm`・`/borrow/add`・`/return` は下部タブを隠す（戻るボタンで戻る）。
+
+### 5.1 画面ごとの補足
+
+- **既読チェック（F-80、`pages/scan/CheckResult.tsx`）**: 「借りたことがあるか」はグループの本と貸出記録だけで決まるので、グループに無い本でも本（ISBN から決まる ID の 1 冊）の読み込みが終わった時点で「まだ借りたことがありません」をすぐ出し、書誌（`lookupByIsbn`）はあとから表示する（取得中はタイトル欄に小さなスピナー。「見つかりませんでした」と手入力の案内は取得が終わってから）。書誌の取得はこの画面でだけ 10 秒で打ち切る（`lookupByIsbn` 自体の直列の呼び出し方は変えない）。
+- **ISBN なしで登録した本の手がかり（F-80・F-27・F-28）**: 本の ID は ISBN から決まる（`isbn-<ISBN13>`）ため、バーコードが隠れて手入力（ISBN なし・自動 ID）で登録した本を、後でバーコードで読むと別の本になる（ルールで ID と ISBN が結び付いており、ISBN を後から付けたり ID を変えたりはしない）。そこで、ISBN の本が見つからず、書誌のタイトルが ISBN なしの本のタイトルと一致する（`normalizeForSearch` で空白・全角半角・記号の違いを無視して完全一致）場合だけ、次のように手がかりを出す。手入力のタイトルは書き方が違うことが多く、同じタイトルの別の本もあるので、自動ではつなげない。
+  - 既読チェック: 判定は「まだ借りたことがありません」のまま、「ISBN なしで登録した同じタイトルの本」としてその本の貸出の履歴と詳細へのリンクを出す。
+  - 借りる確認: 本ごとのカードで「同じ本ですか？」と聞き、「同じ本として借りる」を選んだらカートの本を既存の本（`addExistingBook`）に置き換える。貸出は既存の本に記録し、その本の ISBN は null のまま。この本だけの返却日と、既存の本にシリーズが無ければ書誌のシリーズ・巻数を引き継ぐ。「別の本」を選べばそのまま ISBN の本として新しく登録する。
+  - タイトルの書き方が違えば見つからない。バーコードが隠れた本は、奥付の ISBN を「ISBN を手入力」（スキャン画面）か本の追加画面の検索欄に入れて登録すると、後でバーコードを読んだときに同じ本として見つかる。
+- **本の追加（F-23、`pages/borrow/AddBookPage.tsx`）**: 検索欄の入力が ISBN として読める（`isbnFromSearchQuery`。`searchByTitle` と同じ判定）のに見つからなかった場合は、手入力ではなく「ISBN で追加する（タイトルは確認画面で入力）」（`cart.addIsbn`、バーコードを読んだときと同じ扱い）を出して ISBN を残す。手入力を開いても ISBN の数字はタイトルに写さない。「以前に登録した本」にはその ISBN の登録済みの本も出す。
+- **借りた日（`pages/borrow/BorrowConfirmPage.tsx`）**: 今日より後の日付は登録させない（`submitBlockReason` と入力欄のエラー。文言は貸出の詳細の `validateBorrowedOn` と同じ）。未来の借りた日で登録すると、返却画面で「返却した日」（借りた日以降かつ今日以前）を選べなくなるため。`<input type="date" max>` はキーボード入力を止めないので、画面のロジックで確かめる。
+- **シリーズの「読んだ巻」**: 巻の状態（色）は `bookReadState`（貸出中が優先）のままにし、「読んだ巻」は一度でも「読んだ」で返却したか（everRead）で数える。読み返すために借りている巻は、シリーズ詳細のマス目・一覧で貸出中の色に読んだ印（チェック）を添え、表示名を「貸出中（前に読んだ）」にする。既読チェックのシリーズの要約でも「読んだ巻」と「貸出中」の両方に出る（「途中・未読」は返却済みで一度も読んでいない巻だけ）。
+- **招待リンクとアプリ内ブラウザ（F-01〜03）**: LINE のアプリ内ブラウザ（WKWebView）では Google のログインが「403 disallowed_useragent」で拒否され、Safari・ホーム画面のアプリと保存場所が別で、ホーム画面にも追加できない。
+  - 家族に送る招待リンクには LINE の URL パラメータ `?openExternalBrowser=1` を付ける（LINE からは Safari などで直接開く）。共有の文面にも「iPhone では Safari で開いてください」と書く。
+  - それでもアプリ内ブラウザで開いた場合（Facebook・Instagram など）に備え、UA の目印（`Line/`・`FBAN`/`FBAV`・`Instagram`）だけで狭く判定し（`components/inAppBrowser.ts`）、招待リンクを未ログインで開いたとき（`/login` へ移る前）・ログイン画面・参加画面・通知の設定（ホーム画面に追加の手順）で「Safari で開く」を案内する。ログイン画面では Google のボタンを薄くして理由を添える（判定が外れても使えるよう、隠さない）。メールアドレスでのログインはそのまま使える。UA を偽装したり別の OAuth の方法で Google の方針を避けたりはしない。
+- **シリーズの編集（`pages/series/SeriesEditSheet.tsx`）**: 同じ名前のシリーズがほかにもあれば（2 台で同時に作った・名前を変えて重なった・前からの重複）「このシリーズを「X」にまとめる」（`mergeSeries`）を出す。「シリーズを削除」（`deleteSeries`。本があれば本をシリーズから外して削除。本と貸出の記録は残る）で、自動の推定で誤って作られたシリーズも消せる。まとめた後はまとめ先の画面、削除した後はシリーズ一覧へ移る。
+- **ログイン画面（F-01、`pages/auth/LoginPage.tsx`）**: Google の待ち中もメールアドレスでのログインはでき、「キャンセル（Google の画面から戻ってこないとき）」で待つのをやめられる（4.7 参照）。
+- **通知の手順のアプリ名（F-105、`pages/settings/NotificationsPage.tsx`）**: ホーム画面と「設定」>「通知」の一覧に出る名前は `apple-mobile-web-app-title`・manifest の `short_name` の「かりた本」（正式名の「かりた本ノート」ではない）。手順の図と文面はこの名前で案内する。通知がブロックされているときの「一覧に見つからないとき」は、(1) ホーム画面のアイコンの下の名前で探す、(2) ホーム画面のアイコンから開いているか確かめる、(3) 最後の手段としてだけ、アイコンを削除して追加し直す（ログインと通知の設定が消え、送られていないオフラインの変更が消えることがあるので、先にオンラインで開く）の順に案内する。
 
 ## 6. 通知（`scripts/notify`）
 

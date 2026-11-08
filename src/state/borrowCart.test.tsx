@@ -181,13 +181,43 @@ describe('BorrowCartProvider', () => {
       cart.addCandidate(candidate({ isbn: null, title: 'てがき', source: 'manual', seriesName: 'てがきシリーズ', volume: 3 }));
     });
     await flush();
-    expect(cart.items[0]).toMatchObject({ existingBookId: 'b-manual', seriesName: 'てがきシリーズ', volume: 3 });
+    expect(cart.items[0]).toMatchObject({
+      existingBookId: 'b-manual',
+      matchedBy: 'title',
+      seriesName: 'てがきシリーズ',
+      volume: 3,
+    });
     // ISBN なしで同じタイトルは duplicate
     let dup = '';
     act(() => {
       dup = cart.addCandidate(candidate({ isbn: null, title: 'てがき', source: 'manual' }));
     });
     expect(dup).toBe('duplicate');
+
+    // 「別の本として登録」にすると結び付きが外れ、同じタイトルの本をもう 1 冊入れられる
+    const key = cart.items[0].key;
+    act(() => {
+      cart.update(key, { forceNew: true });
+    });
+    expect(cart.items[0]).toMatchObject({ existingBookId: null, forceNew: true, seriesName: 'てがきシリーズ' });
+    act(() => {
+      dup = cart.addCandidate(candidate({ isbn: null, title: 'てがき', source: 'manual' }));
+    });
+    expect(dup).toBe('added');
+  });
+
+  it('addCandidate は巻数が違えば同じタイトルでも別の本として入れる', () => {
+    renderCart();
+    let r = '';
+    act(() => {
+      r = cart.addCandidate(candidate({ isbn: null, title: 'こどものとも', source: 'manual', volume: 4 }));
+    });
+    expect(r).toBe('added');
+    act(() => {
+      r = cart.addCandidate(candidate({ isbn: null, title: 'こどものとも', source: 'manual', volume: 5 }));
+    });
+    expect(r).toBe('added');
+    expect(cart.items).toHaveLength(2);
   });
 
   it('addExistingBook はシリーズ名を一覧から引く', () => {

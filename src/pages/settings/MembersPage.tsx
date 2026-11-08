@@ -4,6 +4,8 @@
  *   - 「招待リンクを作る」→ createInvite → 共有シート（navigator.share）。
  *     共有シートが使えなければクリップボードにコピー。それもできなければリンクを選択できる形で表示する。
  *   - 招待リンクの有効期限は 7 日。
+ *   - 送るリンクには ?openExternalBrowser=1 を付ける（LINE で開いたときに、Google のログインが拒否される
+ *     アプリ内ブラウザではなく Safari などで開くため）。文面にも「iPhone では Safari で開いて」と書く。
  */
 import { useRef, useState } from 'react';
 import type { Member, WithId } from '../../types';
@@ -13,7 +15,7 @@ import { formatDate, todayString } from '../../lib/date';
 import { Button, Card, ListGroup, ListRow, Page, useToast } from '../../components/ui';
 import { CopyIcon, LinkIcon, ShareIcon } from '../../components/ui/icons';
 import { MemberAvatar } from './MemberAvatar';
-import { inviteExpiryDate, inviteShareText } from './settingsLogic';
+import { inviteExpiryDate, inviteShareText, shareableInviteUrl } from './settingsLogic';
 import styles from './MembersPage.module.css';
 
 type CreatedInvite = { url: string; text: string; expiry: string };
@@ -97,7 +99,12 @@ export default function MembersPage() {
     try {
       const created = await createInvite(groupId, groupName, uid);
       const expiry = inviteExpiryDate();
-      const inv: CreatedInvite = { url: created.url, expiry, text: inviteShareText(groupName, expiry) };
+      // LINE で開いたときに Safari などで開くよう openExternalBrowser=1 を付けて送る
+      const inv: CreatedInvite = {
+        url: shareableInviteUrl(created.url),
+        expiry,
+        text: inviteShareText(groupName, expiry),
+      };
       setInvite(inv);
       await deliver(inv, 'auto');
     } catch (err) {
@@ -142,6 +149,10 @@ export default function MembersPage() {
         <Card>
           <p className={styles.inviteText}>
             招待リンクを LINE やメッセージで家族に送ります。受け取った人がリンクを開いてログインすると、このグループに参加できます。
+          </p>
+          <p className={styles.inviteText}>
+            受け取った人は、iPhone の Safari で開くようにしてください（LINE などのアプリの中で開くと Google
+            でログインできず、ホーム画面にも追加できません）。
           </p>
           <ul className={styles.notes}>
             <li>リンクの有効期限は作成から {INVITE_VALID_DAYS} 日間です。</li>

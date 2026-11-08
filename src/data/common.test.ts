@@ -15,6 +15,8 @@ import {
   isDateString,
   isPermissionDenied,
   isValidDocId,
+  lateWriteFailureMessage,
+  onLateWriteFailure,
   settleWrite,
   stripUndefined,
   toDataError,
@@ -120,6 +122,7 @@ describe('エラー変換', () => {
     expect(isPermissionDenied(new Error('x'))).toBe(false);
     expect(dataErrorMessage({ code: 'permission-denied' })).toContain('権限');
     expect(dataErrorMessage({ code: 'unavailable' })).toContain('通信');
+    expect(dataErrorMessage({ code: 'resource-exhausted' })).toContain('17 時');
     expect(dataErrorMessage({ code: 'something-else' })).toBe('エラーが発生しました。もう一度お試しください。');
   });
 
@@ -141,10 +144,11 @@ describe('エラー変換', () => {
 describe('settleWrite', () => {
   afterEach(() => {
     vi.useRealTimers();
+    vi.restoreAllMocks();
   });
 
-  it('書き込みが完了したら解決する', async () => {
-    await expect(settleWrite(Promise.resolve())).resolves.toBeUndefined();
+  it('書き込みが完了したら confirmed で解決する', async () => {
+    await expect(settleWrite(Promise.resolve())).resolves.toBe('confirmed');
   });
 
   it('すぐに失敗した書き込みは日本語のエラーで失敗する', async () => {
@@ -152,35 +156,113 @@ describe('settleWrite', () => {
     await expect(settleWrite(write)).rejects.toThrow('権限');
   });
 
-  it('応答が無いままなら一定時間で解決し、その後しばらくは待たない', async () => {
+  it('ignoreError に当たるエラーは失敗にしない', async () => {
+    const write = Promise.reject(Object.assign(new Error('denied'), { code: 'permission-denied' }));
+    await expect(settleWrite(write, { ignoreError: isPermissionDenied })).resolves.toBe('confirmed');
+  });
+
+  it('応答が無いままなら一定時間で local として解決し、その後しばらくは長く待たない', async () => {
     vi.useFakeTimers();
-    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
-    let settled = false;
-    const p = settleWrite(new Promise<void>(() => undefined)).then(() => {
-      settled = true;
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    let outcome: string | null = null;
+    const p = settleWrite(new Promise<void>(() => undefined)).then((o) => {
+      outcome = o;
     });
     await vi.advanceTimersByTimeAsync(1000);
-    expect(settled).toBe(false);
+    expect(outcome).toBeNull();
     await vi.advanceTimersByTimeAsync(5000);
     await p;
-    expect(settled).toBe(true);
+    expect(outcome).toBe('local');
 
-    // 直後の書き込みは待たずに解決する（失敗はログに出す）
+    // 直後の書き込みは長くは待たずに local で解決する
+    const pending = settleWrite(new Promise<void>(() => undefined));
+    await vi.advanceTimersByTimeAsync(100);
+    await expect(pending).resolves.toBe('local');
+  });
+
+  it('待たない期間でも、すぐ返る拒否は日本語のエラーで投げ、待たない期間を終える', async () => {
+    vi.useFakeTimers();
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const slow = settleWrite(new Promise<void>(() => undefined));
+    await vi.advanceTimersByTimeAsync(5000);
+    await expect(slow).resolves.toBe('local');
+
+    const denied = settleWrite(Promise.reject(Object.assign(new Error('x'), { code: 'permission-denied' })));
+    const assertion = expect(denied).rejects.toThrow('権限');
+    await vi.advanceTimersByTimeAsync(100);
+    await assertion;
+
+    // 拒否が返った（サーバーに届いている）ので、次の書き込みはまた 4 秒まで待つ
+    let outcome: string | null = null;
+    const next = settleWrite(new Promise<void>(() => undefined)).then((o) => {
+      outcome = o;
+    });
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(outcome).toBeNull();
+    await vi.advanceTimersByTimeAsync(4000);
+    await next;
+    expect(outcome).toBe('local');
+  });
+
+  it('完了扱いにした後でサーバーに拒否されたら、登録した関数に知らせる', async () => {
+    vi.useFakeTimers();
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const listener = vi.fn();
+    const off = onLateWriteFailure(listener);
     let rejectLater: (e: unknown) => void = () => undefined;
-    const pending = new Promise<void>((_, reject) => {
+    const write = new Promise<void>((_, reject) => {
       rejectLater = reject;
     });
-    await expect(settleWrite(pending)).resolves.toBeUndefined();
-    rejectLater(new Error('later'));
-    await vi.advanceTimersByTimeAsync(0);
-    expect(errorSpy).toHaveBeenCalled();
-    errorSpy.mockRestore();
+    const p = settleWrite(write);
+    await vi.advanceTimersByTimeAsync(5000);
+    await expect(p).resolves.toBe('local');
+    expect(listener).not.toHaveBeenCalled();
 
-    // 成功した書き込みがあれば、また待つようになる
-    await settleWrite(Promise.resolve());
+    rejectLater(Object.assign(new Error('gone'), { code: 'not-found' }));
     await vi.advanceTimersByTimeAsync(0);
-    const failing = Promise.reject(Object.assign(new Error('x'), { code: 'permission-denied' }));
-    await expect(settleWrite(failing)).rejects.toThrow('権限');
+    expect(listener).toHaveBeenCalledTimes(1);
+    const error = listener.mock.calls[0][0] as Error;
+    expect(error.message).toContain('見つかりません');
+    expect(lateWriteFailureMessage(error)).toContain('保存できなかった変更があります');
+
+    // ignoreError に当たる失敗と、解除した後は知らせない
+    let rejectIgnored: (e: unknown) => void = () => undefined;
+    const ignoredWrite = settleWrite(
+      new Promise<void>((_, reject) => {
+        rejectIgnored = reject;
+      }),
+      { ignoreError: isPermissionDenied },
+    );
+    await vi.advanceTimersByTimeAsync(5000);
+    await ignoredWrite;
+    rejectIgnored(Object.assign(new Error('x'), { code: 'permission-denied' }));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(listener).toHaveBeenCalledTimes(1);
+
+    off();
+    let rejectAfterOff: (e: unknown) => void = () => undefined;
+    const afterOff = settleWrite(
+      new Promise<void>((_, reject) => {
+        rejectAfterOff = reject;
+      }),
+    );
+    await vi.advanceTimersByTimeAsync(5000);
+    await afterOff;
+    rejectAfterOff(new Error('later'));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(listener).toHaveBeenCalledTimes(1);
+  });
+
+  it('オフラインなら長くは待たずに local で解決し、すぐ返る拒否は投げる', async () => {
+    vi.useFakeTimers();
+    vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
+    const p = settleWrite(new Promise<void>(() => undefined));
+    await vi.advanceTimersByTimeAsync(100);
+    await expect(p).resolves.toBe('local');
+    const denied = settleWrite(Promise.reject(Object.assign(new Error('x'), { code: 'permission-denied' })));
+    const assertion = expect(denied).rejects.toThrow('権限');
+    await vi.advanceTimersByTimeAsync(100);
+    await assertion;
   });
 });
 

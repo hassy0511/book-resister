@@ -200,6 +200,12 @@
   font-weight: var(--font-weight-bold);
 }
 
+.guideSub {
+  margin-top: var(--space-1);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+}
+
 .guideNote {
   margin-top: var(--space-4);
   padding-top: var(--space-3);
