@@ -237,6 +237,9 @@ export function historyScopeKey(scope: HistoryScope): string {
   }
 }
 
+/** 履歴の範囲を読むとき、キャッシュの結果より先にサーバーの結果を待つ時間 */
+const HISTORY_SERVER_WAIT_MS = 3000;
+
 function historyConstraints(scope: HistoryScope): QueryConstraint[] {
   switch (scope.kind) {
     case 'recent':
@@ -258,7 +261,10 @@ export function useHistoryLoans(scope: HistoryScope): QueryResult<WithId<Loan>[]
   const scopeKey = historyScopeKey(scope);
   const result = useSubscription(
     `historyLoans/${groupId}/${scopeKey}`,
-    querySubscriber<Loan>(query(loansCol(groupId), ...historyConstraints(scope))),
+    // 範囲を切り替えた直後のキャッシュには別の範囲で読んだ一部の記録しか無いことがあるので、サーバーの結果を少し待つ
+    querySubscriber<Loan>(query(loansCol(groupId), ...historyConstraints(scope)), {
+      preferServerMs: HISTORY_SERVER_WAIT_MS,
+    }),
     EMPTY_LIST,
   );
   return useMemo(() => ({ ...result, data: sortLoansByBorrowedDesc(result.data) }), [result]);

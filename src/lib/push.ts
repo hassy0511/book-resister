@@ -151,6 +151,17 @@ async function currentSubscription(): Promise<PushSubscription | null> {
   }
 }
 
+/**
+ * 通知スクリプトが送信するプッシュサービスか（Safari・Chrome・Firefox・Edge）。
+ * firestore.rules の pushSubscriptions と scripts/notify/subscription.ts の PUSH_ENDPOINT_PATTERN と同じ条件。
+ */
+const SUPPORTED_ENDPOINT_PATTERN =
+  /^https:\/\/(web\.push\.apple\.com|fcm\.googleapis\.com|updates\.push\.services\.mozilla\.com|[a-z0-9-]+\.notify\.windows\.com)\/.+$/;
+
+export function isSupportedPushEndpoint(endpoint: string): boolean {
+  return endpoint.length <= 2048 && SUPPORTED_ENDPOINT_PATTERN.test(endpoint);
+}
+
 function subscriptionPath(groupId: string, subscriptionId: string) {
   return doc(db, 'groups', groupId, 'pushSubscriptions', subscriptionId);
 }
@@ -247,6 +258,13 @@ export async function enablePush(groupId: string, uid: string): Promise<void> {
   }
 
   const data = toSubscriptionDoc(subscription, uid);
+  if (!isSupportedPushEndpoint(data.endpoint)) {
+    // 保存してもルールで拒否され、通知スクリプトも送らない
+    await subscription.unsubscribe().catch(() => false);
+    throw new Error(
+      'このブラウザの通知の仕組みには対応していません。iPhone・iPad は Safari（ホーム画面に追加したアプリ）、パソコン・Android は Chrome・Edge・Firefox をお使いください。',
+    );
+  }
   const id = await sha256Hex(data.endpoint);
   try {
     await withTimeout(

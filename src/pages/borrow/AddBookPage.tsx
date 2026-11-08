@@ -33,7 +33,7 @@ import {
   SearchIcon,
 } from '../../components/ui/icons';
 import { useBooks } from '../../data/books';
-import { searchByTitle } from '../../lib/bookLookup';
+import { searchByTitleDetailed } from '../../lib/bookLookup';
 import { formatIsbn } from '../../lib/isbn';
 import { guessSeries } from '../../lib/series';
 import { useBorrowCart } from '../../state/borrowCart';
@@ -59,6 +59,8 @@ type SearchState =
       results: BookCandidate[];
       /** 検索語が ISBN として読めたときの ISBN-13 */
       isbn: string | null;
+      /** 0 件で、検索サービスとの通信に失敗した（見つからないのか確かめられなかった） */
+      failed: boolean;
     };
 
 type AddedState = { title: string; result: 'added' | 'duplicate'; note?: string };
@@ -96,10 +98,14 @@ export default function AddBookPage() {
     // キーボードを閉じて結果を見やすくする
     if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
     let results: BookCandidate[] = [];
+    let failed = false;
     try {
-      results = await searchByTitle(q, { signal: controller.signal });
+      const res = await searchByTitleDetailed(q, { signal: controller.signal });
+      results = res.candidates;
+      failed = res.failed;
     } catch {
       results = [];
+      failed = true;
     }
     if (controller.signal.aborted) return;
     setSearch({
@@ -108,6 +114,7 @@ export default function AddBookPage() {
       author: author.trim(),
       results: rankByAuthor(results, author),
       isbn: isbnFromSearchQuery(q),
+      failed: failed || isOffline(),
     });
   };
 
@@ -215,11 +222,13 @@ export default function AddBookPage() {
       search.results.length === 0 && notFoundIsbn ? (
         <EmptyState
           icon={<SearchIcon />}
-          title={`「${search.query}」は見つかりませんでした`}
+          title={search.failed ? '検索サービスにつながりませんでした' : `「${search.query}」は見つかりませんでした`}
           description={
             <>
-              {isOffline() ? 'ネットワークにつながっていないようです。' : '図書館などの情報にまだ無い本のようです。'}
-              ISBN の本として追加すると、タイトルは借りる内容の確認画面で入力できます。ISBN
+              {search.failed
+                ? '電波のよい場所でもう一度検索できます。'
+                : '図書館などの情報にまだ無い本のようです。'}
+              ISBN の本として追加すると、タイトルは借りる内容の確認画面で入力できます（本の情報の再取得もできます）。ISBN
               を付けておくと、あとでバーコードを読んだときに同じ本として見つかります。
             </>
           }
@@ -233,10 +242,10 @@ export default function AddBookPage() {
       ) : search.results.length === 0 ? (
         <EmptyState
           icon={<SearchIcon />}
-          title={`「${search.query}」は見つかりませんでした`}
+          title={search.failed ? '検索サービスにつながりませんでした' : `「${search.query}」は見つかりませんでした`}
           description={
-            isOffline()
-              ? 'ネットワークにつながっていないようです。電波のよい場所で検索するか、手入力で追加してください。'
+            search.failed
+              ? `「${search.query}」を検索できませんでした（通信の失敗・混雑）。電波のよい場所でもう一度検索するか、手入力で追加してください。`
               : 'ひらがな・カタカナを変えたり、短いことばにしたりして検索し直すか、手入力で追加してください。'
           }
           action={

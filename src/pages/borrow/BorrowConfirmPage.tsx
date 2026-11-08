@@ -39,6 +39,7 @@ import {
   KeyboardIcon,
   LocationIcon,
   PlusIcon,
+  RefreshIcon,
   ScanIcon,
   TrashIcon,
 } from '../../components/ui/icons';
@@ -65,11 +66,13 @@ import {
   latestReturnedLoan,
   loadLastLocationId,
   loanSnapshotFor,
+  LOOKUP_FAILED_MESSAGE,
   pickDefaultLocationId,
   sameTitleBooksWithoutIsbn,
   saveLastLocationId,
   splitAuthors,
   submitBlockReason,
+  volumeForSave,
 } from './borrowLogic';
 import styles from './BorrowConfirmPage.module.css';
 
@@ -233,16 +236,18 @@ export default function BorrowConfirmPage() {
           seriesId = seriesIds.get(key) ?? (await findOrCreateSeries(groupId, seriesName));
           seriesIds.set(key, seriesId);
         }
-        const candidate = { ...base, isbn: base.isbn ?? item.isbn, seriesName, volume: item.volume };
+        // 上・中・下の「下」は、同じシリーズの「中」をいっしょに借りるときだけ 3 巻にする
+        const volume = volumeForSave(item, targets);
+        const candidate = { ...base, isbn: base.isbn ?? item.isbn, seriesName, volume };
         // 結び付けた本（ISBN・タイトル・利用者が選んだ本）があれば、タイトルで探し直さずにその本を使う
         const { id: bookId, existing } = await saveBookFromCandidate(
           groupId,
           candidate,
-          { seriesId, volume: item.volume },
+          { seriesId, volume },
           { bookId: item.existingBookId, forceNew: item.forceNew },
         );
         // 既存の本のシリーズ・巻数をこの画面で変えた場合は、本のほうも合わせる
-        const patch = existingSeriesPatch(existing, { seriesId, volume: item.volume });
+        const patch = existingSeriesPatch(existing, { seriesId, volume });
         if (Object.keys(patch).length > 0) await updateBook(groupId, bookId, patch);
         inputs.push({
           bookId,
@@ -450,6 +455,7 @@ export default function BorrowConfirmPage() {
                   locationName={locationName}
                   memberName={memberName}
                   onUpdate={(patch) => cart.update(item.key, patch)}
+                  onRetry={() => cart.retry(item.key)}
                   onRemove={() => setRemoveTarget(item)}
                 />
               </li>
@@ -500,6 +506,8 @@ type CartItemCardProps = {
   locationName: (id: string) => string;
   memberName: (uid: string) => string;
   onUpdate: (patch: CartItemPatch) => void;
+  /** 通信の失敗で取れなかった書誌を取り直す */
+  onRetry: () => void;
   onRemove: () => void;
 };
 
@@ -518,12 +526,15 @@ function CartItemCard({
   locationName,
   memberName,
   onUpdate,
+  onRetry,
   onRemove,
 }: CartItemCardProps) {
   // 「別の本」を選んだら、この画面にいる間は聞き直さない
   const [sameTitleDismissed, setSameTitleDismissed] = useState(false);
   const loading = item.status === 'loading';
-  const notFound = item.status === 'not-found';
+  // 通信の失敗（error）も、見つからなかった本と同じくタイトルを入力できる（再取得もできる）
+  const lookupFailed = item.status === 'error';
+  const notFound = item.status === 'not-found' || lookupFailed;
   const title = itemTitle(item);
   const candidate = item.candidate;
   const [authorText, setAuthorText] = useState(() => candidate?.authors.join('、') ?? '');
@@ -573,6 +584,8 @@ function CartItemCard({
               <Spinner size="sm" label="本の情報を取得しています" />
               <span>本の情報を取得しています…</span>
             </p>
+          ) : lookupFailed ? (
+            <p className={styles.itemMissing}>検索サービスにつながりませんでした</p>
           ) : notFound || !title ? (
             <p className={styles.itemMissing}>本の情報が見つかりませんでした</p>
           ) : (
@@ -597,13 +610,22 @@ function CartItemCard({
 
       {notFound ? (
         <div className={styles.manualFields}>
+          {lookupFailed ? (
+            <Button variant="secondary" size="sm" icon={<RefreshIcon />} onClick={onRetry} disabled={busy}>
+              本の情報を再取得
+            </Button>
+          ) : null}
           <TextField
             label="タイトル"
             required
             value={candidate?.title ?? ''}
             onChange={(v) => setManual({ title: v })}
             onBlur={guessFromTitle}
-            hint="本の情報が見つからなかったので、表紙を見てタイトルを入力してください"
+            hint={
+              lookupFailed
+                ? LOOKUP_FAILED_MESSAGE
+                : '本の情報が見つからなかったので、表紙を見てタイトルを入力してください'
+            }
             error={!title ? 'タイトルを入力してください' : undefined}
             autoComplete="off"
             disabled={busy}

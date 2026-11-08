@@ -197,6 +197,10 @@ export function GroupProvider({ children }: { children: ReactNode }) {
         await putUserProfile(batch, me, dn, invite.groupId);
         await batch.commit();
       } catch (e) {
+        // 招待が無効にされた（F-07: すべて無効にする・メンバーを外す）後のリンクは、読めても参加は拒否される
+        if (isPermissionDenied(e)) {
+          throw new Error('この招待リンクは無効になっています。家族に新しい招待リンクを発行してもらってください。');
+        }
         throw toDataError(e);
       }
     },

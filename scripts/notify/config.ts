@@ -7,6 +7,7 @@
  *   VAPID_PRIVATE_KEY         VAPID 秘密鍵
  *   VAPID_SUBJECT             'mailto:...' か 'https://...'（未設定なら https の APP_URL を使う）
  *   APP_URL                   通知をタップしたときに開く URL（既定 '/'）
+ *   NOTIFY_GROUP_IDS          通知するグループの ID（カンマ・空白・改行区切り）。未設定なら全グループ（警告を出す）
  * ローカル確認用: FIRESTORE_EMULATOR_HOST があればサービスアカウント無しでエミュレータに接続する。
  */
 import { isDateString } from '../../src/lib/date';
@@ -167,6 +168,27 @@ export function readAppUrl(env: Env): string {
     // 下で ConfigError にする
   }
   throw new ConfigError(`APP_URL は「https://〜」か「/」で始まるパスで指定してください（指定値: ${value}）。`);
+}
+
+/** グループ ID として受け付ける形（Firestore のドキュメント ID。アプリが作る ID は英数字 20 文字） */
+const GROUP_ID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
+
+/**
+ * 通知するグループの ID の一覧（NOTIFY_GROUP_IDS）。未設定なら null（全グループ）。
+ * 誰でもアカウントを作ってグループを作れるため、本番では家族のグループだけに限る。
+ */
+export function readGroupAllowlist(env: Env): string[] | null {
+  const value = envValue(env, 'NOTIFY_GROUP_IDS');
+  if (!value) return null;
+  const ids = [...new Set(value.split(/[\s,、]+/).filter((id) => id !== ''))];
+  const invalid = ids.filter((id) => !GROUP_ID_PATTERN.test(id));
+  if (invalid.length > 0) {
+    throw new ConfigError(
+      `NOTIFY_GROUP_IDS に正しくないグループ ID があります: ${invalid.join(', ')}（英数字の ID をカンマ区切りで指定します）。`,
+    );
+  }
+  if (ids.length === 0) return null;
+  return ids;
 }
 
 /** web-push に渡すプロキシ（社内ネットワークなどでローカル実行する場合のみ） */

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatVolumeRanges, parseScanMode, summarizeSeries } from './scanLogic';
+import { formatVolumeRanges, parseScanMode, scanNoticeText, summarizeSeries } from './scanLogic';
 
 describe('parseScanMode', () => {
   it('check 以外は借りるモード', () => {
@@ -98,5 +98,31 @@ describe('summarizeSeries', () => {
     expect(s.borrowedVolumes).toEqual([]);
     expect(s.notBorrowedVolumes).toEqual([]);
     expect(s.borrowedBookCount).toBe(0);
+  });
+});
+
+describe('scanNoticeText', () => {
+  const titled = { title: 'ぐりとぐら' } as { title: string };
+  const cand = { ...titled, isbn: null, authors: [], publisher: null, coverUrl: null, seriesName: null, volume: null, source: 'openbd' as const };
+
+  it('取得中・見つかった・見つからない', () => {
+    expect(scanNoticeText('added', { status: 'loading', candidate: null })).toMatchObject({ loading: true });
+    expect(scanNoticeText('added', { status: 'ready', candidate: cand }).message).toBe('追加：ぐりとぐら');
+    expect(scanNoticeText('added', { status: 'not-found', candidate: null }).message).toContain('見つかりません');
+  });
+
+  it('通信の失敗は「つながりませんでした」と再取得・手入力の案内', () => {
+    const n = scanNoticeText('added', { status: 'error', candidate: null });
+    expect(n.message).toContain('検索サービスにつながりませんでした');
+    expect(n.message).toContain('再取得');
+    expect(n.tone).toBe('warning');
+  });
+
+  it('通信の失敗だった本を読み直すと「取り直しています」', () => {
+    expect(scanNoticeText('duplicate', { status: 'loading', candidate: null })).toMatchObject({
+      message: 'すでに追加済みです（本の情報を取り直しています…）',
+      loading: true,
+    });
+    expect(scanNoticeText('duplicate', { status: 'ready', candidate: cand }).message).toBe('すでに追加済み：ぐりとぐら');
   });
 });

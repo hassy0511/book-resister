@@ -181,6 +181,25 @@ describe('招待で参加する', () => {
     await assertFails(joinBatch(as('dave'), 'dave', 'g1', VALID_INVITE_CODE));
   });
 
+  it('「これまでの招待リンクをすべて無効にする」より前に作った招待では参加できない', async () => {
+    await assertSucceeds(updateDoc(doc(as('alice'), 'groups/g1'), { invitesValidAfter: serverTimestamp() }));
+    await assertFails(joinBatch(as('dave'), 'dave', 'g1', VALID_INVITE_CODE));
+    // 他のグループの招待には影響しない
+    await assertSucceeds(joinBatch(as('eve'), 'eve', 'g2', OTHER_GROUP_INVITE_CODE));
+  });
+
+  it('無効にした後に作った招待では参加できる', async () => {
+    await updateDoc(doc(as('alice'), 'groups/g1'), { invitesValidAfter: serverTimestamp() });
+    await assertSucceeds(setDoc(doc(as('alice'), 'invites', NEW_CODE), newInvite('alice')));
+    await assertSucceeds(joinBatch(as('dave'), 'dave', 'g1', NEW_CODE));
+  });
+
+  it('無効にした招待では、members が残っている人の参加し直し（上書き）もできない', async () => {
+    await seed(env, { 'groups/g1/members/dave': { displayName: 'だいすけ', joinedAt: PAST, inviteCode: VALID_INVITE_CODE } });
+    await updateDoc(doc(as('alice'), 'groups/g1'), { invitesValidAfter: serverTimestamp() });
+    await assertFails(joinBatch(as('dave'), 'dave', 'g1', VALID_INVITE_CODE));
+  });
+
   it('members を作らずに users.groupId だけ設定することはできない', async () => {
     await assertFails(
       setDoc(doc(as('dave'), 'users/dave'), {

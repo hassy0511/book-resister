@@ -7,7 +7,7 @@
  */
 import { normalizeIsbn } from '../isbn';
 import type { BookCandidate } from '../../types';
-import { fetchJson, type FetchOptions } from './http';
+import { fetchJsonResult, isLookupFailure, type FetchOptions, type SourceResult } from './http';
 import { asArray, asRecord, asString, pick } from './json';
 import { cleanAuthors, cleanPublisher, joinTitle, normalizeSpaces, toHttpsUrl } from './normalize';
 
@@ -79,29 +79,48 @@ export function parseGoogleBooksResponse(json: unknown): BookCandidate[] {
     .filter((c): c is BookCandidate => c !== null);
 }
 
-/** ISBN で Google Books を引く。ISBN が一致するものを優先。失敗・該当なしは null */
-export async function fetchGoogleByIsbn(isbn13: string, opts: GoogleOptions = {}): Promise<BookCandidate | null> {
-  const json = await fetchJson(googleIsbnUrl(isbn13, opts.apiKey), opts);
-  if (json === null) return null;
+/**
+ * ISBN で Google Books を引く。ISBN が一致するものを優先。
+ * 該当なしは value: null、通信の失敗（キー無しで多い 429 など）は failed: true（例外は出さない）
+ */
+export async function fetchGoogleByIsbnDetailed(
+  isbn13: string,
+  opts: GoogleOptions = {},
+): Promise<SourceResult<BookCandidate | null>> {
+  const res = await fetchJsonResult(googleIsbnUrl(isbn13, opts.apiKey), opts);
+  if (!res.ok) return { value: null, failed: isLookupFailure(res) };
   try {
     const want = normalizeIsbn(isbn13);
-    const items = parseGoogleBooksResponse(json);
+    const items = parseGoogleBooksResponse(res.data);
     // 別の ISBN の本しか返らなかった場合は使わない（ISBN 情報の無い結果は該当とみなす）
     const hit = items.find((c) => c.isbn === want) ?? items.find((c) => c.isbn === null);
-    return hit ? { ...hit, isbn: want } : null;
+    return { value: hit ? { ...hit, isbn: want } : null, failed: false };
   } catch {
-    return null;
+    return { value: null, failed: true };
+  }
+}
+
+/** ISBN で Google Books を引く。失敗・該当なしは null */
+export async function fetchGoogleByIsbn(isbn13: string, opts: GoogleOptions = {}): Promise<BookCandidate | null> {
+  return (await fetchGoogleByIsbnDetailed(isbn13, opts)).value;
+}
+
+/** 書名で Google Books を検索する（最大 20 件）。該当なしは空配列、通信の失敗は failed: true */
+export async function searchGoogleByTitleDetailed(
+  title: string,
+  opts: GoogleOptions = {},
+): Promise<SourceResult<BookCandidate[]>> {
+  if (!normalizeSpaces(title)) return { value: [], failed: false };
+  const res = await fetchJsonResult(googleTitleUrl(title, opts.apiKey), opts);
+  if (!res.ok) return { value: [], failed: isLookupFailure(res) };
+  try {
+    return { value: parseGoogleBooksResponse(res.data), failed: false };
+  } catch {
+    return { value: [], failed: true };
   }
 }
 
 /** 書名で Google Books を検索する（最大 20 件）。失敗時は空配列 */
 export async function searchGoogleByTitle(title: string, opts: GoogleOptions = {}): Promise<BookCandidate[]> {
-  if (!normalizeSpaces(title)) return [];
-  const json = await fetchJson(googleTitleUrl(title, opts.apiKey), opts);
-  if (json === null) return [];
-  try {
-    return parseGoogleBooksResponse(json);
-  } catch {
-    return [];
-  }
+  return (await searchGoogleByTitleDetailed(title, opts)).value;
 }

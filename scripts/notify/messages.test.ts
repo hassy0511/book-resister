@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
+  MAX_BODY_LENGTH,
   buildGroupNotification,
   buildPushPayload,
   classifyDue,
   formatCategoryLine,
+  limitBody,
   summarizeDueLoans,
   tokyoToday,
   type NotifyLoan,
@@ -137,6 +139,43 @@ describe('formatCategoryLine', () => {
       ]),
     ).toBe('明日返却：○○図書館 3冊、△△保育園 1冊');
   });
+
+  it('場所が 3 か所を超えたら、残りを「ほか N か所 M冊」にまとめる', () => {
+    expect(
+      formatCategoryLine('overdue', [
+        { name: 'A館', count: 4 },
+        { name: 'B館', count: 3 },
+        { name: 'C館', count: 2 },
+        { name: 'D館', count: 2 },
+        { name: 'E館', count: 1 },
+      ]),
+    ).toBe('延滞中：A館 4冊、B館 3冊、C館 2冊、ほか 2 か所 3冊');
+    // ちょうど 3 か所ならまとめない
+    expect(
+      formatCategoryLine('in3days', [
+        { name: 'A館', count: 1 },
+        { name: 'B館', count: 1 },
+        { name: 'C館', count: 1 },
+      ]),
+    ).toBe('3日後に返却：A館 1冊、B館 1冊、C館 1冊');
+  });
+});
+
+describe('limitBody', () => {
+  it('収まれば改行でつなぐだけ', () => {
+    expect(limitBody(['a', 'b'], 3)).toBe('a\nb');
+  });
+
+  it('収まらない行は入る分だけ残して「…」', () => {
+    expect(limitBody(['abc', 'defgh'], 6)).toBe('abc\nd…');
+    expect(limitBody(['abcdefgh'], 5)).toBe('abcd…');
+    // 改行の直後で切れるときは改行を残さない
+    expect(limitBody(['abc', 'defgh'], 5)).toBe('abc…');
+  });
+
+  it('サロゲートペアを分けない', () => {
+    expect(limitBody(['𠮷𠮷𠮷'], 4)).toBe('𠮷…');
+  });
 });
 
 describe('buildGroupNotification', () => {
@@ -189,5 +228,49 @@ describe('buildPushPayload', () => {
   it('SW が読む JSON { title, body, url, tag }', () => {
     const json = buildPushPayload({ title: 't', body: 'b', tag: 'due-2026-11-08' }, '/');
     expect(JSON.parse(json)).toEqual({ title: 't', body: 'b', url: '/', tag: 'due-2026-11-08' });
+  });
+});
+
+describe('通知の大きさ（Apple の Web Push は暗号化後 4KB まで）', () => {
+  /** n か所の場所（名前は len 文字）と、各場所に延滞・明日・3日後の本が 1 冊ずつ */
+  function manyLocations(n: number, len: number) {
+    const locs = new Map<string, NotifyLocation>();
+    const loans: NotifyLoan[] = [];
+    for (let i = 0; i < n; i++) {
+      const id = `loc${i}`;
+      locs.set(id, { name: `${String(i).padStart(2, '0')}${'図'.repeat(len - 2)}` });
+      loans.push(loan('2026-11-01', id), loan('2026-11-09', id), loan('2026-11-11', id));
+    }
+    return { locs, loans };
+  }
+
+  it('12 か所 × 40 文字 × 3 区分でも 3 区分すべてが本文に残り、ペイロードは十分小さい', () => {
+    const { locs, loans } = manyLocations(12, 40);
+    const n = buildGroupNotification(loans, locs, TODAY);
+    expect(n).not.toBeNull();
+    const lines = n!.body.split('\n');
+    expect(lines).toHaveLength(3);
+    expect(lines[0]).toMatch(/^延滞中：.*、ほか 9 か所 9冊$/);
+    expect(lines[1]).toMatch(/^明日返却：.*、ほか 9 か所 9冊$/);
+    expect(lines[2]).toMatch(/^3日後に返却：.*、ほか 9 か所 9冊$/);
+    expect(n!.body.length).toBeLessThanOrEqual(MAX_BODY_LENGTH);
+    const payload = buildPushPayload(n!, 'https://karita-hon-1a2b3.web.app/');
+    // 暗号化で増えるのは 100 バイト程度
+    expect(Buffer.byteLength(payload, 'utf8')).toBeLessThan(2000);
+  });
+
+  it('ルールで許される 100 文字の名前でも長さの上限を超えない', () => {
+    const { locs, loans } = manyLocations(40, 100);
+    const n = buildGroupNotification(loans, locs, TODAY)!;
+    expect(n.body.length).toBeLessThanOrEqual(MAX_BODY_LENGTH);
+    expect(n.body.split('\n')).toHaveLength(3);
+    // 名前は 40 文字で切る
+    expect(n.body).toContain(`00${'図'.repeat(38)}… 1冊`);
+    expect(Buffer.byteLength(buildPushPayload(n, '/'), 'utf8')).toBeLessThan(2000);
+  });
+
+  it('場所の名前の改行は空白にする（本文の行を崩さない）', () => {
+    const locs = new Map<string, NotifyLocation>([['x', { name: '中央\n図書館' }]]);
+    expect(buildGroupNotification([loan('2026-11-09', 'x')], locs, TODAY)?.body).toBe('明日返却：中央 図書館 1冊');
   });
 });

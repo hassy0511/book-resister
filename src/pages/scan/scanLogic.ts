@@ -3,6 +3,7 @@
  */
 import { bookReadState, type BookReadState } from '../../data/readStatus';
 import type { CartItem } from '../../state/borrowCartLogic';
+import { LOOKUP_FAILED_MESSAGE } from '../borrow/borrowLogic';
 import type { Book, Loan } from '../../types';
 
 export type ScanMode = 'borrow' | 'check';
@@ -122,11 +123,18 @@ export function scanNoticeText(
 ): ScanNotice {
   const title = item?.candidate?.title?.trim() || null;
   if (kind === 'duplicate') {
+    // 通信の失敗で取れなかった本を読み直すと、カートが取り直す
+    if (item?.status === 'loading') {
+      return { message: 'すでに追加済みです（本の情報を取り直しています…）', tone: 'info', loading: true };
+    }
     return { message: title ? `すでに追加済み：${title}` : 'すでに追加済みです', tone: 'info', loading: false };
   }
   if (!item) return { message: '追加しました', tone: 'success', loading: false };
   if (item.status === 'loading') {
     return { message: title ? `追加：${title}（取得中…）` : '追加：タイトルを取得中…', tone: 'success', loading: true };
+  }
+  if (!title && item.status === 'error') {
+    return { message: `追加：${LOOKUP_FAILED_MESSAGE}`, tone: 'warning', loading: false };
   }
   if (!title) {
     return {

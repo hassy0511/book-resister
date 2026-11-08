@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { itemFromCandidate } from '../../state/borrowCartLogic';
 import type { BookCandidate } from '../../types';
 import {
   autoDueOn,
@@ -21,6 +22,7 @@ import {
   saveLastLocationId,
   splitAuthors,
   submitBlockReason,
+  volumeForSave,
 } from './borrowLogic';
 
 function memoryStorage() {
@@ -220,6 +222,11 @@ describe('タイトル検索の補助', () => {
     expect(isbnFromSearchQuery('ぐりとぐら')).toBeNull();
     expect(isbnFromSearchQuery('100かいだてのいえ')).toBeNull();
     expect(isbnFromSearchQuery('')).toBeNull();
+    // 奥付からの貼り付け（「ISBN」付き・U+2010 のハイフン）や全角Ｘも ISBN として読む（searchByTitle と同じ）
+    expect(isbnFromSearchQuery('ISBN978-4-8340-0082-5')).toBe('9784834000825');
+    expect(isbnFromSearchQuery('978‐4‐8340‐0082‐5')).toBe('9784834000825');
+    expect(isbnFromSearchQuery('０８０４４２９５７Ｘ')).toBe('9780804429573');
+    expect(isbnFromSearchQuery('ISBN 1338878921')).toBe('9781338878929');
   });
 
   it('matchExistingBooks は ISBN の入力なら同じ ISBN の本を先頭に出す', () => {
@@ -274,5 +281,38 @@ describe('登録の補助', () => {
     expect(existingSeriesPatch({ seriesId: 's1', volume: 2 }, { seriesId: 's1', volume: 2 })).toEqual({});
     expect(existingSeriesPatch({ seriesId: 's1', volume: 2 }, { seriesId: 's2', volume: 5 })).toEqual({ seriesId: 's2', volume: 5 });
     expect(existingSeriesPatch({ seriesId: 's1', volume: 2 }, { seriesId: 's1', volume: null })).toEqual({});
+  });
+});
+
+describe('volumeForSave（上・中・下の「下」）', () => {
+  const item = (title: string, seriesName: string | null, volume: number | null, key = title) =>
+    itemFromCandidate(
+      { isbn: null, title, authors: [], publisher: null, coverUrl: null, seriesName, volume, source: 'manual' },
+      key,
+    );
+
+  it('上下 2 冊組の「下」は 2 巻のまま（2 巻が抜けにならない）', () => {
+    const up = item('西の魔女が死んだ 上', '西の魔女が死んだ', 1);
+    const down = item('西の魔女が死んだ 下', '西の魔女が死んだ', 2);
+    expect(volumeForSave(down, [up, down])).toBe(2);
+    expect(volumeForSave(up, [up, down])).toBe(1);
+  });
+
+  it('同じシリーズの「中」をいっしょに借りるなら「下」は 3 巻', () => {
+    const up = item('三つの国のものがたり 上', '三つの国のものがたり', 1);
+    const mid = item('三つの国のものがたり 中', '三つの国のものがたり', 2);
+    const down = item('三つの国のものがたり 下', '三つの国のものがたり', 2);
+    expect(volumeForSave(down, [up, mid, down])).toBe(3);
+    expect(volumeForSave(mid, [up, mid, down])).toBe(2);
+  });
+
+  it('別のシリーズの「中」・シリーズなし・結び付けた既存の本は変えない', () => {
+    const mid = item('ねこ 中', 'ねこ', 2);
+    const down = item('いぬ 下', 'いぬ', 2);
+    expect(volumeForSave(down, [mid, down])).toBe(2);
+    const noSeries = item('いぬ 下', null, 2, 'k2');
+    expect(volumeForSave(noSeries, [item('いぬ 中', null, 2, 'k3'), noSeries])).toBe(2);
+    const linked = { ...item('ねこ 下', 'ねこ', 2), existingBookId: 'b1' };
+    expect(volumeForSave(linked, [mid, linked])).toBe(2);
   });
 });

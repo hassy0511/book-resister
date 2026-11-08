@@ -2,7 +2,8 @@
  * スキャンで確認（既読チェック, F-80〜83）の結果シート。登録はしない。
  *   - グループ内に本があれば: 貸出の履歴（いつ・どこで・誰が・読書状況）、いま貸出中か
  *   - 無ければ: 「まだ借りたことがありません」を本の一覧の読み込みが終わった時点ですぐ出し、
- *     書誌情報（lookupByIsbn）は取得でき次第あとから表示する（遅い回線でも判定を待たせない。最大 10 秒で打ち切る）
+ *     書誌情報（lookupByIsbn）は取得でき次第あとから表示する（遅い回線でも判定を待たせない。最大 10 秒で打ち切る）。
+ *     通信の失敗・時間切れで書誌を確かめられなかった場合は「検索サービスにつながりませんでした」と再取得ボタンを出す
  *   - グループに無い本でも、書誌のタイトルが「ISBN なしで登録した本」（バーコードが隠れて手入力した本など）と
  *     同じなら、同じ本とは決めつけずに「同じタイトルの本があります」としてその本の履歴と詳細へのリンクを出す
  *   - シリーズの本なら: 同じシリーズで借りた巻・まだの巻の要約とシリーズ画面へのリンク
@@ -11,19 +12,28 @@
  * 使い方:
  *   <CheckResultSheet isbn={checkedIsbn} onContinue={() => setCheckedIsbn(null)} />
  */
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { BookCover } from '../../components/BookCover';
 import { ReadStateBadge } from '../../components/ReadStateBadge';
 import { Button, ErrorState, LinkButton, Sheet, Spinner, useToast } from '../../components/ui';
-import { AlertIcon, BookIcon, CheckCircleIcon, ChevronRightIcon, InfoIcon, PlusIcon, ScanIcon } from '../../components/ui/icons';
+import {
+  AlertIcon,
+  BookIcon,
+  CheckCircleIcon,
+  ChevronRightIcon,
+  InfoIcon,
+  PlusIcon,
+  RefreshIcon,
+  ScanIcon,
+} from '../../components/ui/icons';
 import { useBook, useBooksInSeries, useBooksWithoutIsbn } from '../../data/books';
 import { useLoansForBook, useLoansForBooks } from '../../data/loans';
 import { useLocations } from '../../data/locations';
 import { bookReadState } from '../../data/readStatus';
 import { useSeriesList } from '../../data/series';
 import { useGroup } from '../../group/GroupProvider';
-import { lookupByIsbn } from '../../lib/bookLookup';
+import { lookupByIsbnDetailed } from '../../lib/bookLookup';
 import { formatDate } from '../../lib/date';
 import { bookIdForIsbn, formatIsbn } from '../../lib/isbn';
 import { findMatchingSeries } from '../../lib/series';
@@ -48,32 +58,56 @@ const CHECK_LOOKUP_CAP_MS = 10_000;
  */
 const BOOK_MISSING_AFTER_MS = 3000;
 
+type IsbnLookupState = {
+  loading: boolean;
+  candidate: BookCandidate | null;
+  /** 見つからず、通信の失敗か時間切れで確かめられなかった */
+  failed: boolean;
+  /** 取り直す */
+  retry: () => void;
+};
+
 /** ISBN から書誌情報を取得する（isbn が null の間は何もしない） */
-function useIsbnLookup(isbn: string | null): { loading: boolean; candidate: BookCandidate | null } {
-  const [result, setResult] = useState<{ isbn: string; candidate: BookCandidate | null } | null>(null);
+function useIsbnLookup(isbn: string | null): IsbnLookupState {
+  const [attempt, setAttempt] = useState(0);
+  const [result, setResult] = useState<{
+    isbn: string;
+    attempt: number;
+    candidate: BookCandidate | null;
+    failed: boolean;
+  } | null>(null);
 
   useEffect(() => {
     if (!isbn) return undefined;
     const controller = new AbortController();
     let cancelled = false;
+    let capped = false;
     // 時間切れの中断では、lookupByIsbn がそれまでの結果を返すので表示に使う
-    const timer = window.setTimeout(() => controller.abort(), CHECK_LOOKUP_CAP_MS);
-    lookupByIsbn(isbn, { signal: controller.signal })
-      .catch(() => null)
-      .then((candidate) => {
+    const timer = window.setTimeout(() => {
+      capped = true;
+      controller.abort();
+    }, CHECK_LOOKUP_CAP_MS);
+    lookupByIsbnDetailed(isbn, { signal: controller.signal })
+      .catch(() => ({ candidate: null, failed: true }))
+      .then(({ candidate, failed }) => {
         window.clearTimeout(timer);
-        if (!cancelled) setResult({ isbn, candidate });
+        // 時間切れで何も取れなかった場合も、「見つからない」ではなく「確かめられなかった」として扱う
+        if (!cancelled) setResult({ isbn, attempt, candidate, failed: candidate === null && (failed || capped) });
       });
     return () => {
       cancelled = true;
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [isbn]);
+  }, [isbn, attempt]);
 
-  if (!isbn) return { loading: false, candidate: null };
-  if (!result || result.isbn !== isbn) return { loading: true, candidate: null };
-  return { loading: false, candidate: result.candidate };
+  const retry = useCallback(() => setAttempt((n) => n + 1), []);
+
+  if (!isbn) return { loading: false, candidate: null, failed: false, retry };
+  if (!result || result.isbn !== isbn || result.attempt !== attempt) {
+    return { loading: true, candidate: null, failed: false, retry };
+  }
+  return { loading: false, candidate: result.candidate, failed: result.failed, retry };
 }
 
 export type CheckResultSheetProps = {
@@ -183,6 +217,14 @@ function CheckResultContent({ isbn, open, onContinue }: { isbn: string; open: bo
                 <Spinner size="sm" label="本の情報を取得しています" />
                 <span>本の情報を取得しています…</span>
               </p>
+            ) : lookup.failed ? (
+              <>
+                <p className={styles.titleMissing}>検索サービスにつながりませんでした</p>
+                <p className={styles.meta}>電波のよい場所で再取得するか、「この本を借りる」からタイトルを手入力してください</p>
+                <Button variant="secondary" size="sm" icon={<RefreshIcon />} onClick={lookup.retry}>
+                  本の情報を再取得
+                </Button>
+              </>
             ) : (
               <p className={styles.titleMissing}>本の情報が見つかりませんでした</p>
             )}

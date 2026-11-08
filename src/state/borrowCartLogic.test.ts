@@ -13,6 +13,7 @@ import {
   itemFromCandidate,
   newIsbnItem,
   parseStoredCart,
+  retryLookup,
   serializeCart,
   type CartItem,
 } from './borrowCartLogic';
@@ -113,6 +114,37 @@ describe('既存の本・書誌の反映', () => {
     expect(out.status).toBe('not-found');
     expect(out.candidate).toBeNull();
     expect(isItemResolved(out)).toBe(false);
+  });
+
+  it('取得中 → 通信の失敗で確かめられなければ error（タイトルを入れれば登録できる）', () => {
+    const out = applyLookup(newIsbnItem(ISBN), null, true);
+    expect(out.status).toBe('error');
+    expect(isItemResolved(out)).toBe(false);
+    const typed = applyPatch(out, { candidate: { ...cand({ title: '手入力' }), source: 'manual' } });
+    expect(typed.status).toBe('error');
+    expect(isItemResolved(typed)).toBe(true);
+  });
+
+  it('retryLookup: error・not-found の ISBN の本を取得中に戻す', () => {
+    const failed = applyLookup(newIsbnItem(ISBN), null, true);
+    expect(retryLookup(failed).status).toBe('loading');
+    expect(retryLookup(applyLookup(newIsbnItem(ISBN), null)).status).toBe('loading');
+    const ready = applyLookup(newIsbnItem(ISBN), cand());
+    expect(retryLookup(ready)).toBe(ready);
+    const noIsbn = itemFromCandidate(cand({ isbn: null }), 'manual-1');
+    expect(retryLookup({ ...noIsbn, status: 'not-found' }).status).toBe('not-found');
+  });
+
+  it('再取得: 手入力のタイトル・著者は残し、空欄だけ書誌で補う。また取れなければ入力欄を出したまま', () => {
+    const manual = { ...cand({ title: '手入力', authors: ['だれか'], coverUrl: null, publisher: null }), source: 'manual' as const };
+    const typed = retryLookup(applyPatch(applyLookup(newIsbnItem(ISBN), null, true), { candidate: manual }));
+    expect(typed.status).toBe('loading');
+    const found = applyLookup(typed, cand({ coverUrl: 'https://example.com/c.jpg', publisher: '福音館書店' }));
+    expect(found.status).toBe('ready');
+    expect(found.candidate).toMatchObject({ title: '手入力', authors: ['だれか'], coverUrl: 'https://example.com/c.jpg', publisher: '福音館書店' });
+    expect(applyLookup(typed, null, true).status).toBe('error');
+    expect(applyLookup(typed, null).status).toBe('not-found');
+    expect(applyLookup(typed, null).candidate?.title).toBe('手入力');
   });
 
   it('既存の本があれば、本の情報とシリーズを優先し、空欄は書誌で補う', () => {
@@ -263,5 +295,18 @@ describe('保存形式', () => {
     expect(items).toHaveLength(2);
     expect(items[0].status).toBe('loading');
     expect(items[1]).toMatchObject({ key: 'x', status: 'not-found', dueOnOverride: null });
+  });
+
+  it('error の本は読み直すときに取得中に戻す（ISBN が無ければ手入力に回す）', () => {
+    const raw = JSON.stringify({
+      version: 1,
+      groupId: 'g1',
+      items: [
+        { key: ISBN, status: 'error', candidate: null, isbn: ISBN },
+        { key: 'y', status: 'error', candidate: null, isbn: null },
+      ],
+    });
+    const { items } = parseStoredCart(raw);
+    expect(items.map((i) => i.status)).toEqual(['loading', 'not-found']);
   });
 });

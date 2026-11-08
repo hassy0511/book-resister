@@ -16,6 +16,7 @@ import {
   enablePush,
   getPushState,
   isStandalone,
+  isSupportedPushEndpoint,
   sameKey,
   sha256Hex,
   urlBase64ToUint8Array,
@@ -98,12 +99,12 @@ interface BrowserOptions {
   subscription?: FakeSubscription | null;
 }
 
-function setupBrowser(opts: BrowserOptions = {}) {
+function setupBrowser(opts: BrowserOptions & { newEndpoint?: string } = {}) {
   let subscription = opts.subscription ?? null;
   const pushManager = {
     getSubscription: vi.fn(async () => subscription),
     subscribe: vi.fn(async (o: { applicationServerKey: Uint8Array }) => {
-      subscription = fakeSubscription('https://web.push.apple.com/NEW', VAPID_KEY);
+      subscription = fakeSubscription(opts.newEndpoint ?? 'https://web.push.apple.com/NEW', VAPID_KEY);
       subscription.options.applicationServerKey = o.applicationServerKey.slice().buffer;
       return subscription;
     }),
@@ -234,6 +235,27 @@ describe('enablePush', () => {
   it('iPhone でホーム画面から開いていなければエラー', async () => {
     setupBrowser({ standalone: false });
     await expect(enablePush('g1', 'u1')).rejects.toThrow(/ホーム画面/);
+  });
+
+  it('対応していないプッシュサービスなら保存せず、購読も解除する', async () => {
+    const browser = setupBrowser({ standalone: true, newEndpoint: 'https://push.example.com/abc' });
+    await expect(enablePush('g1', 'u1')).rejects.toThrow(/対応していません/);
+    expect(firestore.setDoc).not.toHaveBeenCalled();
+    expect(browser.current()?.unsubscribe).toHaveBeenCalledOnce();
+  });
+});
+
+describe('isSupportedPushEndpoint', () => {
+  it('主要なブラウザのプッシュサービスだけ', () => {
+    expect(isSupportedPushEndpoint('https://web.push.apple.com/QGxhYmVs')).toBe(true);
+    expect(isSupportedPushEndpoint('https://fcm.googleapis.com/fcm/send/abc:def')).toBe(true);
+    expect(isSupportedPushEndpoint('https://updates.push.services.mozilla.com/wpush/v2/gAAA')).toBe(true);
+    expect(isSupportedPushEndpoint('https://wns2-par02p.notify.windows.com/w/?token=BQYAAA')).toBe(true);
+    expect(isSupportedPushEndpoint('https://attacker.example/x')).toBe(false);
+    expect(isSupportedPushEndpoint('https://web.push.apple.com.attacker.example/x')).toBe(false);
+    expect(isSupportedPushEndpoint('https://web.push.apple.com:8443/x')).toBe(false);
+    expect(isSupportedPushEndpoint('https://web.push.apple.com/')).toBe(false);
+    expect(isSupportedPushEndpoint('http://web.push.apple.com/x')).toBe(false);
   });
 });
 

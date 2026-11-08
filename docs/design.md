@@ -24,6 +24,7 @@
 ```
 src/
   main.tsx                 エントリ。SW 登録（virtual:pwa-register）
+  swUpdate.ts              新しい版の SW が有効になったときの再読み込みの時機（5.1「新しい版への切り替え」）
   App.tsx                  ルーティング、Provider の組み立て、ログイン/グループ参加のガード
   types.ts                 共有データ型（Firestore と 1 対 1）
   firebase.ts              Firebase 初期化（app / auth / db）
@@ -49,14 +50,14 @@ tests/rules/               Firestore セキュリティルールのテスト
 | パス | 内容 | 補足 |
 |---|---|---|
 | `users/{uid}` | `UserProfile` | 本人のみ読み書き。`groupId` は自分がメンバーのグループのみ設定可 |
-| `groups/{gid}` | `Group` | メンバーのみ読める |
-| `groups/{gid}/members/{uid}` | `Member` | 作成は本人のみ。グループ作成者 or 有効な招待コードを持つ人 |
-| `invites/{code}` | `Invite` | ログイン済みなら code 指定で `get` 可（`list` 不可）。有効期限 7 日 |
+| `groups/{gid}` | `Group` | メンバーのみ読める。メンバーは `name` と `invitesValidAfter`（招待の一括無効化。値は今の時刻＝`request.time` だけ、削除不可）を変更できる |
+| `groups/{gid}/members/{uid}` | `Member` | 作成は本人のみ。グループ作成者 or 有効な招待コードを持つ人。削除は本人（抜ける）か、メンバー（他の人を外す。F-07）。他の人を外すときは同じ書き込みで `groups/{gid}.invitesValidAfter` を今の時刻にする（ルールで必須） |
+| `invites/{code}` | `Invite` | ログイン済みなら code 指定で `get` 可（`list` 不可）。有効期限 7 日。期限内なら何人でも使える。有効＝期限内かつ `createdAt` がグループの `invitesValidAfter`（無ければ 1970 年）より後 |
 | `groups/{gid}/locations/{id}` | `Location` | |
 | `groups/{gid}/books/{id}` | `Book` | ISBN がある本の ID は `isbn-<ISBN13>` |
 | `groups/{gid}/series/{id}` | `Series` | |
 | `groups/{gid}/loans/{id}` | `Loan` | 貸出中は `returnedOn == null` |
-| `groups/{gid}/pushSubscriptions/{id}` | `PushSubscriptionDoc` | ID は endpoint の SHA-256（16 進）。本人のもののみ読み書き |
+| `groups/{gid}/pushSubscriptions/{id}` | `PushSubscriptionDoc` | ID は endpoint の SHA-256（16 進）。本人のもののみ読み書き。endpoint は主要なブラウザのプッシュサービスのみ、鍵は p256dh 65 バイト・auth 16 バイトの base64url（6 章） |
 
 - 日付（借りた日など）は `'YYYY-MM-DD'`（端末のローカル日付）。作成・更新日時は `serverTimestamp()`（ルールで `request.time` と一致を確認する）。
 - `firestore.rules` はフィールドの集合（過不足なし）・型・範囲を確認する。文字数の上限は次のとおり（`src/data/common.ts` の `TEXT_LIMITS` と一致させる）。書誌 API から来た値は data 層で切り詰め、利用者の入力は日本語のエラーにする。
@@ -67,11 +68,12 @@ tests/rules/               Firestore セキュリティルールのテスト
 | 場所の名前 / メモ | 100 / 1000 文字（画面では名前を 40 文字に制限） |
 | シリーズ名 / 全巻数 | 200 文字 / 1〜9999 |
 | 本のタイトル / 出版社 | 300 / 200 文字 |
-| 著者 | 50 人まで、1 人 200 文字、合計 2000 文字 |
+| 著者 | 10 人まで、1 人 200 文字、合計 2000 文字（ルールにループが無く、要素の型は添字で 1 つずつ確かめるため。確かめる数を増やすと式の評価数の上限 1000 に当たる。書誌 API の 11 人目以降は `clipAuthors` で落とす） |
 | 表紙 URL | `http(s)://` で始まる 2048 文字以内 |
 | 巻数 | 0〜99999 の整数 |
 | 感想 / 評価 | 2000 文字 / 1〜5 の整数 |
 | 招待コード / 有効期限 | `^[A-Za-z0-9_-]{16,64}$` / 作成時刻 + 8 日以内（端末の時計のずれを見込む） |
+- **招待の取り消しとメンバーを外す（F-07）。** 招待は一覧できない（`list` 不可）ので 1 本ずつは消さず、`groups/{gid}.invitesValidAfter` を今の時刻にしてそれより前の招待をまとめて無効にする（招待で参加する members の作成・上書きのルールで `invite.createdAt > invitesValidAfter` を確かめる）。他のメンバーを外すときも同じバッチで無効にするので、外した人は手元の招待リンクや自分で作った招待で戻れない。グループの作成者は外されても招待なしで戻れる（`joinsAsCreator`。作成者は運用者で、部外者に外されたときの戻り道）。外された人の端末は `GroupProvider` の permission-denied で未参加の扱いになり、通知はメンバーの購読にだけ送るので届かなくなる（購読のドキュメントは消さない）。
 - **複合インデックスは使わない。** クエリは単一フィールドの条件か並び替えのみとし、残りはクライアントで絞り込む・並べ替える。
 - **読み取りの回数（Spark の無料枠は 5 万回／日）。** 購読は画面ごとに付け外しされ、前回から 30 分以上空けて購読し直すと結果の全件分が読み取りとして数えられる（`persistentLocalCache` の差分の読み取りは 30 分以内だけ）。貸出記録は削除しないので年 1,000 件ずつ増え続ける。そのため、コレクション全件の購読は全件が本当に必要な画面だけにする。
   - 既読チェック: ISBN から決まる ID の 1 冊（`useBook`）・同じシリーズの本（`useBooksInSeries`）・ISBN なしの本（`useBooksWithoutIsbn`）だけ。借りる確認: カートの本（`useBooksByIds`）と ISBN なしの本だけ。
@@ -99,6 +101,8 @@ dueLabel(dueOn: DateString, today?: DateString): string // 例 "2日超過" "今
 
 ```ts
 normalizeIsbn(input: string): string | null  // ISBN-10/13（ハイフン可）→ ISBN-13。不正なら null
+  // 「ISBN」「ISBN-13:」などの接頭辞・各種ハイフン・全角も可。「ISBN 1338878921」のように接頭辞の後ろの
+  // 10／13 が ISBN-10 の先頭の数字のこともあるので、取り除いた形と残した形の両方を試す
 isBookEan(code: string): boolean             // 978/979 で始まりチェックディジットが正しい 13 桁
 bookIdForIsbn(isbn13: string): string        // `isbn-${isbn13}`
 formatIsbn(isbn13: string): string           // 表示用（ハイフン区切り不要なら素の 13 桁でよい）
@@ -109,23 +113,41 @@ formatIsbn(isbn13: string): string           // 表示用（ハイフン区切�
 ```ts
 guessSeries(title: string): { seriesName: string | null; volume: number | null }
   // 「おしりたんてい (3)」「マジック・ツリーハウス 12」「〇〇 第3巻」「〇〇 ③」「〇〇 vol.2」などから推定
+guessSeriesDetail(title: string): { seriesName; volume; position: '上' | '中' | '下' | '前' | '後' | null }
+parseVolume(text): number | null              // API の巻次（「3」「第3巻」「下」など）
+parseVolumePosition(text) / titleVolumePosition(title): 上・中・下／前・後 の位置（無ければ null）
+resolvePositionVolume(book: { title; volume; position? }, siblings): number | null
+  // 「下」（巻数 2）と同じシリーズに「中」があれば 3、それ以外は book.volume のまま
 normalizeSeriesName(name: string): string   // 比較用（NFKC、空白・記号除去、小文字化、末尾の「シリーズ」除去）
 findMatchingSeries<T extends { name: string }>(name: string, list: T[]): T | null
 ```
+
+- 上・中・下は 上=1・中=2・**下=2**、前編=1・後編=2。日本の本は上下 2 冊組が 3 冊組よりはるかに多く、下=3 にすると存在しない 2 巻が「抜けている巻」（F-74）・「まだの巻」（F-82）に出るため。タイトルからの推定と API の巻次（`parseVolume`）は同じ表を使う。
+- 3 冊組の「下」は推定の段階では分からないので、保存の直前（借りる確認の登録、`borrowLogic.volumeForSave`）に同じカートの同じシリーズに「中」の本があれば 3 巻にする。登録済みの他の本の巻数は書き換えない（利用者が手で直した巻数を上書きしないため。巻数が自動の推定かどうかは記録していない）。「下」を 2 巻で登録した後に「中」を登録すると 2 巻が 2 冊になる（抜けは出ない。手で直せる、F-71）。下=3 で登録済みの本は移行しない（手で直す）。
+- 「第456号」のような号数は巻数にしない（月刊絵本の号数を巻数にすると 1〜455 号が「抜け」になるため）。
 
 ### 4.4 `src/lib/bookLookup/index.ts`
 
 ```ts
 lookupByIsbn(isbn13: string, opts?: { signal?: AbortSignal }): Promise<BookCandidate | null>
   // openBD → NDL → Google Books。最初に見つかった結果を基に、欠けている項目（表紙など）を後続で補う
+  // シリーズ名・巻数が定まらない場合（API にもタイトルにも無い）は NDL も呼ぶ（Google Books は呼ばない）
   // シリーズ名・巻数は API の値を優先し、無ければ guessSeries(title) で推定
 searchByTitle(query: string, opts?: { signal?: AbortSignal }): Promise<BookCandidate[]>
   // NDL ＋ Google Books。ISBN で重複除去、最大 20 件
+lookupByIsbnDetailed(isbn13, opts?): Promise<{ candidate: BookCandidate | null; failed: boolean }>
+searchByTitleDetailed(query, opts?): Promise<{ candidates: BookCandidate[]; failed: boolean }>
+  // failed: 見つからず（0 件で）、しかも 1 つ以上の API が通信に失敗した（該当なしと確かめられていない）
 ```
 
 - 各 API 呼び出しは try/catch し、失敗（CORS・タイムアウト・上限）しても例外を外に出さない。タイムアウト 8 秒。
+- 通信の失敗（通信エラー・タイムアウト・HTTP エラー（429・5xx）・壊れた応答）と「該当なし」を区別する（`http.ts` の `fetchJsonResult`/`fetchTextResult` が失敗の理由を返す）。呼び出し側の signal による中断は失敗に数えない。すべてではなく 1 つでも失敗すれば failed にする（openBD が該当なしでも NDL・Google が失敗していれば、無いとは確かめられていない）。キー無しの Google Books は 429 になりやすいので「つながりませんでした」が増えるが、画面の再取得・手入力で対応する。
+- 画面は failed のとき「検索サービスにつながりませんでした（電波のよい場所で再取得するか、手入力してください）」と案内し、再取得できるようにする（借りる確認・スキャンの通知・本の追加・既読チェック。4.10、5.1）。
+- 後続の API を呼ぶかは `missingFields`（`merge.ts`）で決める。'series' はシリーズ名か巻数が定まらないこと（`finalizeCandidate` によるタイトルからの推定も含めて判断するので「おしりたんてい (3)」「ONE PIECE 104」では呼ばない）。NDL の dcndl:seriesTitle（「かいけつゾロリシリーズ ; 36」）を使うため。副作用として、シリーズの無い単発の本では NDL を 1 回多く呼ぶ（借りる・既読チェックの待ち時間が少し増える）。シリーズのためだけに呼んだ NDL のシリーズに巻数が無ければ使わない（`isLabelLikeSeriesName` で除けない叢書名をシリーズにしないため）。`fillMissing` の「先の API の値が優先」は変えない。
+- openBD: v1 は 2023-07 に提供終了が告知され（JPRO からのデータ配信は 2023-06 に停止）、2023-08 以降の `api.openbd.jp/v1/get` は国立国会図書館の書誌（CC-BY）を元にした代替データを同じ仕様で返している（少なくとも 60 か月の提供。**2028 年ごろに見直す**。終わったら `ISBN_SOURCES` から外すか見直す）。新刊・書影の収録は以前より狭いが、未登録は `[null]` がすぐ返る（往復 1 回分）ので先頭のままにしている。今は主に書影と ONIX 由来のシリーズ情報（Collection・PartNumber）の取得元として働く。要件の「取得できる情報と優先順位は実装時に検証する」の結果として、openBD（書影・ONIX のシリーズ）→ NDL（書誌・シリーズの巻次）→ Google Books（書影の補い。キー無しでは上限に当たりやすい）の順にしている。
+- NDL のタイトル検索は資料種別を絞らずに 50 件取り（`cnt=50`）、記事・論文・雑誌などは受け取った後で除く。除く分と同じ ISBN の重複レコード（国立国会図書館・公共図書館）も枠を使うため、表示の最大 20 件より多めに取る。資料種別の絞り込み（mediatype）は受け付ける値を本番の API で確かめられないので使わない。
 - 出版社のレーベル名らしいシリーズ名（末尾が 文庫・新書・コミックス・絵本 など）はシリーズとして使わず、タイトルから推定する。
-- `searchByTitle` に ISBN として読める文字列を渡すと `lookupByIsbn` の結果（0 件か 1 件）を返す。
+- `searchByTitle` に ISBN として読める文字列（`normalizeIsbn` が読める。「ISBN978-4-…」・U+2010 のハイフン・全角Ｘも可）を渡すと `lookupByIsbn` の結果（0 件か 1 件）を返す。
 - Google Books は `VITE_GOOGLE_BOOKS_API_KEY` があれば `key=` を付ける。
 - 表紙が無い場合は NDL のサムネイル URL `https://ndlsearch.ndl.go.jp/thumbnail/{isbn13}.jpg` を候補にしてよい（`<img>` 表示のみ。読み込み失敗時は `BookCover` がプレースホルダに切り替える）。
 
@@ -268,7 +290,11 @@ deleteLoan(gid, loanId): Promise<void>                              // 誤登録
 // invites.ts
 createInvite(gid, groupName: string, uid: string): Promise<{ code: string; url: string }>  // url = `${location.origin}/join/${code}`
   // 家族に送るときは画面側（MembersPage の shareableInviteUrl）で ?openExternalBrowser=1 を付ける（5.1 参照）
-getInvite(code: string): Promise<WithId<Invite> | null>              // 期限切れは null
+getInvite(code: string): Promise<WithId<Invite> | null>              // 期限切れは null（一括無効化された招待は読めるが、参加で拒否される）
+
+// members.ts（F-07。どちらもサーバーの応答を 15 秒まで待ち、届かなければ「まだ反映されていません」のエラー）
+revokeInvites(gid): Promise<void>                                     // groups/{gid}.invitesValidAfter = serverTimestamp()
+removeMember(gid, memberUid, selfUid): Promise<void>                  // invitesValidAfter の更新 + members/{memberUid} の削除を 1 バッチ。自分は不可
 
 // readStatus.ts（純粋関数）
 bookReadState(loans: Pick<Loan, 'returnedOn' | 'readStatus'>[]): BookReadState  // 'reading' | 'read' | 'partial' | 'unread' | 'none'
@@ -288,13 +314,14 @@ useBorrowCart(): {
   addCandidate(c: BookCandidate): 'added' | 'duplicate';
   addExistingBook(book: WithId<Book>): 'added' | 'duplicate';
   update(key: string, patch: Partial<Pick<CartItem, 'seriesName' | 'volume' | 'dueOnOverride' | 'candidate' | 'forceNew'>> & { existingBookId?: null }): void;
+  retry(key: string): void;         // 'error'（と 'not-found'）の ISBN の本を 'loading' に戻して取り直す
   remove(key: string): void;
   clear(): void;
 }
 type CartItem = {                   // 型は src/state/borrowCartLogic.ts に置き、borrowCart.tsx から再 export
   key: string;                      // ISBN があれば isbn13、無ければランダム
-  status: 'loading' | 'ready' | 'not-found';
-  candidate: BookCandidate | null;  // not-found の場合は null（タイトル手入力を促す）
+  status: 'loading' | 'ready' | 'not-found' | 'error';  // error: 通信の失敗で書誌を確かめられなかった
+  candidate: BookCandidate | null;  // not-found・error の場合は null（タイトル手入力を促す）
   isbn: string | null;
   existingBookId: string | null;
   matchedBy: 'isbn' | 'title' | 'chosen' | null;  // 結び付けたきっかけ（ISBN の ID・タイトルの一致・利用者が選んだ本）
@@ -308,7 +335,8 @@ type CartItem = {                   // 型は src/state/borrowCartLogic.ts に�
 
 - BorrowCartProvider は `/login` を含む全ルートの外側にあるため、`useRequiredGroup()` ではなく `useGroup()` を使う（未参加ならグループの照合をしない）。
 - 別のグループのユーザーがログインしたらカートを空にする。読み込み中のまま再起動した項目は取得し直す。
-- 書誌が見つからない項目は、利用者がタイトルを入力しても status は 'not-found' のまま。登録できるのは「読み込み中でなく、タイトルのある candidate を持つ」項目（`isItemResolved`）。
+- 書誌が見つからない項目（'not-found'）・通信の失敗で確かめられなかった項目（'error'、`lookupByIsbnDetailed` の failed）は、利用者がタイトルを入力しても status はそのまま（タイトルの入力欄を出し続ける）。登録できるのは「読み込み中でなく、タイトルのある candidate を持つ」項目（`isItemResolved`）なので、'error' でも手入力すれば登録できる。
+- 'error' の項目は取り直せる: 借りる確認の「本の情報を再取得」（`retry`）、同じバーコードをもう一度読み取る（`addIsbn` は 'duplicate' を返し、その項目を取り直す）、保存した内容の復元（'loading' に戻す）。取り直しで書誌が見つかっても、利用者が入力したタイトル・著者は上書きせず空欄だけ補う。iOS では弱い電波のとき `navigator.onLine`・`online` イベントが当てにならないので、自動の再試行はせずボタンで取り直す。
 - タイトルの一致で既存の本に結び付けた項目（`matchedBy: 'title'`）は、借りる確認で「同じタイトルの登録済みの本」と示し、「別の本として登録」（`update(key, { forceNew: true })`）で外せる（結び付ける前の内容に戻す）。登録時は `existingBookId` があればその本を使い（`saveBookFromCandidate` の `bookId`）、`forceNew` ならタイトルで照合しない。
 - 重複の判定（`findDuplicate`）: 同じ ISBN・同じ既存の本・ISBN なしで同じタイトル。ただし ISBN なしで同じタイトルでも、巻数が両方あって違う場合（月刊絵本の号など）と、カートの側が `forceNew` の場合は別の本とみなす（登録時の照合とそろえ、1 冊に貸出が 2 件付かないようにする）。
 
@@ -347,7 +375,7 @@ type CartItem = {                   // 型は src/state/borrowCartLogic.ts に�
 | `/settings/profile` | `pages/settings/ProfilePage.tsx` | 表示名、グループ名 |
 | `/settings/locations` | `pages/settings/LocationsPage.tsx` | 場所一覧（非表示含む） |
 | `/settings/locations/new`, `/settings/locations/:id` | `pages/settings/LocationEditPage.tsx` | 場所の登録・編集・非表示 |
-| `/settings/members` | `pages/settings/MembersPage.tsx` | メンバー一覧、招待リンクの発行・共有 |
+| `/settings/members` | `pages/settings/MembersPage.tsx` | メンバー一覧、招待リンクの発行・共有、他のメンバーを外す・これまでの招待リンクをすべて無効にする（F-07。どちらも確認ダイアログ） |
 | `/settings/notifications` | `pages/settings/NotificationsPage.tsx` | 通知の状態、オン/オフ、ホーム画面追加の手順、テスト通知 |
 
 下部タブ: ホーム（`/`）・スキャン（`/scan?mode=borrow`）・履歴（`/history`）・シリーズ（`/series`）・設定（`/settings`）。タブはログイン済みかつグループ参加済みの画面でのみ表示。
@@ -361,18 +389,20 @@ type CartItem = {                   // 型は src/state/borrowCartLogic.ts に�
 
 ### 5.1 画面ごとの補足
 
-- **既読チェック（F-80、`pages/scan/CheckResult.tsx`）**: 「借りたことがあるか」はグループの本と貸出記録だけで決まるので、グループに無い本でも本（ISBN から決まる ID の 1 冊）の読み込みが終わった時点で「まだ借りたことがありません」をすぐ出し、書誌（`lookupByIsbn`）はあとから表示する（取得中はタイトル欄に小さなスピナー。「見つかりませんでした」と手入力の案内は取得が終わってから）。書誌の取得はこの画面でだけ 10 秒で打ち切る（`lookupByIsbn` 自体の直列の呼び出し方は変えない）。
+- **既読チェック（F-80、`pages/scan/CheckResult.tsx`）**: 「借りたことがあるか」はグループの本と貸出記録だけで決まるので、グループに無い本でも本（ISBN から決まる ID の 1 冊）の読み込みが終わった時点で「まだ借りたことがありません」をすぐ出し、書誌（`lookupByIsbn`）はあとから表示する（取得中はタイトル欄に小さなスピナー。「見つかりませんでした」と手入力の案内は取得が終わってから）。書誌の取得はこの画面でだけ 10 秒で打ち切る（`lookupByIsbn` 自体の直列の呼び出し方は変えない）。書誌が無いとき、通信の失敗（`lookupByIsbnDetailed` の failed）または 10 秒の打ち切りなら「見つかりませんでした」ではなく「検索サービスにつながりませんでした」と「本の情報を再取得」ボタンを出す（打ち切りでは後続の API を確かめていないため）。
 - **ISBN なしで登録した本の手がかり（F-80・F-27・F-28）**: 本の ID は ISBN から決まる（`isbn-<ISBN13>`）ため、バーコードが隠れて手入力（ISBN なし・自動 ID）で登録した本を、後でバーコードで読むと別の本になる（ルールで ID と ISBN が結び付いており、ISBN を後から付けたり ID を変えたりはしない）。そこで、ISBN の本が見つからず、書誌のタイトルが ISBN なしの本のタイトルと一致する（`normalizeForSearch` で空白・全角半角・記号の違いを無視して完全一致）場合だけ、次のように手がかりを出す。手入力のタイトルは書き方が違うことが多く、同じタイトルの別の本もあるので、自動ではつなげない。
   - 既読チェック: 判定は「まだ借りたことがありません」のまま、「ISBN なしで登録した同じタイトルの本」としてその本の貸出の履歴と詳細へのリンクを出す。
   - 借りる確認: 本ごとのカードで「同じ本ですか？」と聞き、「同じ本として借りる」を選んだらカートの本を既存の本（`addExistingBook`）に置き換える。貸出は既存の本に記録し、その本の ISBN は null のまま。この本だけの返却日と、既存の本にシリーズが無ければ書誌のシリーズ・巻数を引き継ぐ。「別の本」を選べばそのまま ISBN の本として新しく登録する。
   - タイトルの書き方が違えば見つからない。バーコードが隠れた本は、奥付の ISBN を「ISBN を手入力」（スキャン画面）か本の追加画面の検索欄に入れて登録すると、後でバーコードを読んだときに同じ本として見つかる。
-- **本の追加（F-23、`pages/borrow/AddBookPage.tsx`）**: 検索欄の入力が ISBN として読める（`isbnFromSearchQuery`。`searchByTitle` と同じ判定）のに見つからなかった場合は、手入力ではなく「ISBN で追加する（タイトルは確認画面で入力）」（`cart.addIsbn`、バーコードを読んだときと同じ扱い）を出して ISBN を残す。手入力を開いても ISBN の数字はタイトルに写さない。「以前に登録した本」にはその ISBN の登録済みの本も出す。
+- **本の追加（F-23、`pages/borrow/AddBookPage.tsx`）**: 検索欄の入力が ISBN として読める（`isbnFromSearchQuery`。`searchByTitle` と同じ判定）のに見つからなかった場合は、手入力ではなく「ISBN で追加する（タイトルは確認画面で入力）」（`cart.addIsbn`、バーコードを読んだときと同じ扱い）を出して ISBN を残す。手入力を開いても ISBN の数字はタイトルに写さない。「以前に登録した本」にはその ISBN の登録済みの本も出す。検索が 0 件で通信に失敗していた（`searchByTitleDetailed` の failed、またはオフライン）ときは「見つかりませんでした」や「ひらがな・カタカナを変えたり…」ではなく「検索サービスにつながりませんでした」と、電波のよい場所での検索し直し・手入力を案内する。
 - **借りた日（`pages/borrow/BorrowConfirmPage.tsx`）**: 今日より後の日付は登録させない（`submitBlockReason` と入力欄のエラー。文言は貸出の詳細の `validateBorrowedOn` と同じ）。未来の借りた日で登録すると、返却画面で「返却した日」（借りた日以降かつ今日以前）を選べなくなるため。`<input type="date" max>` はキーボード入力を止めないので、画面のロジックで確かめる。
 - **シリーズの「読んだ巻」**: 巻の状態（色）は `bookReadState`（貸出中が優先）のままにし、「読んだ巻」は一度でも「読んだ」で返却したか（everRead）で数える。読み返すために借りている巻は、シリーズ詳細のマス目・一覧で貸出中の色に読んだ印（チェック）を添え、表示名を「貸出中（前に読んだ）」にする。既読チェックのシリーズの要約でも「読んだ巻」と「貸出中」の両方に出る（「途中・未読」は返却済みで一度も読んでいない巻だけ）。
 - **招待リンクとアプリ内ブラウザ（F-01〜03）**: LINE のアプリ内ブラウザ（WKWebView）では Google のログインが「403 disallowed_useragent」で拒否され、Safari・ホーム画面のアプリと保存場所が別で、ホーム画面にも追加できない。
   - 家族に送る招待リンクには LINE の URL パラメータ `?openExternalBrowser=1` を付ける（LINE からは Safari などで直接開く）。共有の文面にも「iPhone では Safari で開いてください」と書く。
   - それでもアプリ内ブラウザで開いた場合（Facebook・Instagram など）に備え、UA の目印（`Line/`・`FBAN`/`FBAV`・`Instagram`）だけで狭く判定し（`components/inAppBrowser.ts`）、招待リンクを未ログインで開いたとき（`/login` へ移る前）・ログイン画面・参加画面・通知の設定（ホーム画面に追加の手順）で「Safari で開く」を案内する。ログイン画面では Google のボタンを薄くして理由を添える（判定が外れても使えるよう、隠さない）。メールアドレスでのログインはそのまま使える。UA を偽装したり別の OAuth の方法で Google の方針を避けたりはしない。
-- **シリーズの編集（`pages/series/SeriesEditSheet.tsx`）**: 同じ名前のシリーズがほかにもあれば（2 台で同時に作った・名前を変えて重なった・前からの重複）「このシリーズを「X」にまとめる」（`mergeSeries`）を出す。「シリーズを削除」（`deleteSeries`。本があれば本をシリーズから外して削除。本と貸出の記録は残る）で、自動の推定で誤って作られたシリーズも消せる。まとめた後はまとめ先の画面、削除した後はシリーズ一覧へ移る。
+- **シリーズの編集（`pages/series/SeriesEditSheet.tsx`）**: 同じ名前のシリーズがほかにもあれば（2 台で同時に作った・名前を変えて重なった・前からの重複）、このシリーズを X にまとめる操作（`mergeSeries`）を出す（ボタンは「「X」にまとめる」）。「シリーズを削除」（`deleteSeries`。本があれば本をシリーズから外して削除。本と貸出の記録は残る）で、自動の推定で誤って作られたシリーズも消せる。まとめた後はまとめ先の画面、削除した後はシリーズ一覧へ移る。
+- **メンバーを外す・招待の無効化（F-07、`pages/settings/MembersPage.tsx`）**: 自分以外の行に「外す」。確認ダイアログで「見られなくなる・通知が届かなくなる・これまでの招待リンクもすべて無効になる」と伝える。招待の欄の下に「これまでの招待リンクをすべて無効にする」（確認ダイアログ）。どちらも成功したら、画面に出していた招待リンクを消す。参加画面で無効化済みの招待を使うと、参加の書き込みが permission-denied になるので「この招待リンクは無効になっています」と出す（`GroupProvider.joinGroup`）。
+- **新しい版への切り替え（`src/swUpdate.ts`、`main.tsx`）**: `registerType: 'autoUpdate'` と `sw.ts` の `skipWaiting`・`clientsClaim` で、新しい SW は見つかるとすぐ有効になる（更新の確認は起動時、1 時間ごと、10 分以上空けてアプリに戻ったとき）。`registerSW` の `onNeedReload` で、読み込みから 10 秒以内ならすぐ再読み込みし、それ以外は「再読み込み待ち」にして、次に別の画面へ移るとき（`history.pushState`／`replaceState` で pathname が変わる、または戻る操作）に移動先の URL を読み込み直す。入力中（感想・貸出の編集など）の内容を消さないため。古い画面のまま lazy() の画面を開くと、新しい SW がキャッシュから消した古いチャンクを読めない（ErrorBoundary の「画面を読み込めませんでした」）ので、画面を移る時点で読み込み直す。アプリを裏に回しただけでは再読み込みしない。
 - **ログイン画面（F-01、`pages/auth/LoginPage.tsx`）**: Google の待ち中もメールアドレスでのログインはでき、「キャンセル（Google の画面から戻ってこないとき）」で待つのをやめられる（4.7 参照）。
 - **通知の手順のアプリ名（F-105、`pages/settings/NotificationsPage.tsx`）**: ホーム画面と「設定」>「通知」の一覧に出る名前は `apple-mobile-web-app-title`・manifest の `short_name` の「かりた本」（正式名の「かりた本ノート」ではない）。手順の図と文面はこの名前で案内する。通知がブロックされているときの「一覧に見つからないとき」は、(1) ホーム画面のアイコンの下の名前で探す、(2) ホーム画面のアイコンから開いているか確かめる、(3) 最後の手段としてだけ、アイコンを削除して追加し直す（ログインと通知の設定が消え、送られていないオフラインの変更が消えることがあるので、先にオンラインで開く）の順に案内する。
 
@@ -384,8 +414,17 @@ type CartItem = {                   // 型は src/state/borrowCartLogic.ts に�
   - 明日返却（`dueOn == 今日+1`）
   - 3 日後に返却（`dueOn == 今日+3`）
 - 対象があるグループのメンバー全員の購読先に 1 通送る。本文は区分ごとに場所別の冊数（例：「明日返却：○○図書館 3冊」）。タップでアプリのホームを開く。
+- 本文の長さ（Apple の Web Push は暗号化後 4KB まで。超えると 413 で毎日失敗する）: 1 つの区分に並べる場所は冊数の多い順に 3 か所までで、残りは「ほか 2 か所 5冊」にまとめる。場所の名前は 40 文字（画面の上限）で切り、改行は空白にする。本文全体は 500 文字（`src/sw.ts` が表示時に切る長さと同じ `MAX_BODY_LENGTH`）までで、行の単位で切る。
 - 送信結果が 404/410 の購読は削除する。
-- 環境変数: `FIREBASE_SERVICE_ACCOUNT`（JSON）、`VAPID_PUBLIC_KEY`、`VAPID_PRIVATE_KEY`、`VAPID_SUBJECT`（`mailto:` か URL）、`APP_URL`。
+- 対象のグループ: `NOTIFY_GROUP_IDS`（Variables。カンマ区切り）に書いた家族のグループだけ。誰でもアカウントとグループを作れるため、部外者のグループ・購読を毎朝のジョブに処理させない。未設定なら互換のため全グループを処理し、警告（GitHub Actions では `::warning::`）を出す。グループ ID はログの `[ID] グループ「名前」` の行で確かめる（docs/setup.md 手順 12）。指定した ID のグループが無ければ失敗に数える。
+- 送らない購読（`scripts/notify/subscription.ts`。`firestore.rules` の pushSubscriptions と `src/lib/push.ts` も同じ条件）:
+  - endpoint が主要なブラウザのプッシュサービス（`web.push.apple.com`・`fcm.googleapis.com`・`updates.push.services.mozilla.com`・`*.notify.windows.com`。ホストの直後は `/`）でないもの。第三者のサーバーへ送ると VAPID の JWT（`VAPID_SUBJECT` の連絡先を含む）が渡るため。
+  - p256dh が P-256 の公開鍵（65 バイトの base64url、曲線上の点）でない、auth が 16 バイトの base64url でないもの（暗号化の段階で必ず失敗するため）。
+  - 読み飛ばした数は警告として出すだけで、失敗には数えない（終了コードに影響しない）。削除もしない（条件の誤りで家族の購読を消さないため）。
+- 送信の上限: 1 件の送信は 20 秒で打ち切る（web-push の `timeout` は無通信の時間しか見ないので、少しずつ応答する相手に備えて送信ごとの `https.Agent` を壊して接続を切る）。1 グループで送る購読はメンバーのものを新しい順に 20 件まで、同時に 5 件まで。グループは 4 つずつ並行に処理し、1 グループが遅れても他のグループを待たせない。終わった後に接続が残っていても 5 秒で終了する。
+- 終了コード: 送信の失敗・グループの処理の失敗が 1 件でもあれば 1。
+- 環境変数: `FIREBASE_SERVICE_ACCOUNT`（JSON）、`VAPID_PUBLIC_KEY`、`VAPID_PRIVATE_KEY`、`VAPID_SUBJECT`（`mailto:` か URL）、`APP_URL`、`NOTIFY_GROUP_IDS`。
+- 鍵: 通知のワークフローには、`roles/datastore.user` だけを持つ通知専用のサービスアカウント（`notify-bot`）の鍵（Secrets `NOTIFY_SERVICE_ACCOUNT`）を環境変数 `FIREBASE_SERVICE_ACCOUNT` として渡す。デプロイ用の鍵（Hosting・ルールの管理権限を持つ `FIREBASE_SERVICE_ACCOUNT`）は渡さない。`NOTIFY_SERVICE_ACCOUNT` が未登録のときはデプロイ用の鍵に切り替えず、エラーで止める。
 - `--dry-run` で送信せずに内容を表示。
 
 ## 7. 画面デザインの方針
@@ -395,3 +434,8 @@ type CartItem = {                   // 型は src/state/borrowCartLogic.ts に�
 - 色は CSS 変数で定義し、`prefers-color-scheme: dark` にも対応。メインカラーは落ち着いた緑（`#2f6f5e`）。
 - 返却日の色: 延滞＝赤、3 日以内＝オレンジ、それ以外＝通常。
 - 読み込み中・空の状態・エラーを必ず表示する。書き込みの成功／失敗はトーストで知らせる。
+
+## 8. デプロイと CI（`.github/workflows`）
+
+- `deploy.yml`: main への push と手動実行（workflow_dispatch）で、Hosting と Firestore のルール・インデックスをデプロイする。デプロイの前に**同じジョブの中で**型チェック・単体テスト・セキュリティルールのテスト（`npm run test:rules`、Java とエミュレータを使う）を行い、失敗したらデプロイしない。CI の結果は待たない（`workflow_run` は PR の CI 成功でも動く・既定ブランチの最新をチェックアウトするなどの落とし穴があり、非公開リポジトリの無料プランではブランチ保護で CI を必須にできないため）。`concurrency: deploy`、途中で取り消さない。
+- `ci.yml`: main への push・プルリクエスト・手動実行で、型チェック・単体テスト・ビルド・ルールのテストを行う（同じブランチの新しい push で古い実行は取り消す）。デプロイのジョブを ci.yml に入れないのは、この取り消しでデプロイが途中で止まらないようにするため。

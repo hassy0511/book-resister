@@ -11,7 +11,44 @@ import ndlGuri from './__fixtures__/ndl-title-guri.xml?raw';
 import openbdNotFound from './__fixtures__/openbd-notfound.json?raw';
 import openbdOnePiece from './__fixtures__/openbd-onepiece.json?raw';
 import openbdOshiri from './__fixtures__/openbd-oshiri.json?raw';
-import { lookupByIsbn, searchByTitle } from './index';
+import { lookupByIsbn, lookupByIsbnDetailed, searchByTitle, searchByTitleDetailed } from './index';
+
+const ZORORI_ISBN = '9784591082331';
+
+/** openBD の応答（表紙あり。series はレーベル名だけ・空・巻次なしなど） */
+function openbdZorori(series: string): string {
+  return JSON.stringify([
+    {
+      summary: {
+        isbn: ZORORI_ISBN,
+        title: 'かいけつゾロリのきょうふのエイリアン',
+        volume: '',
+        series,
+        publisher: 'ポプラ社',
+        cover: 'https://cover.openbd.jp/9784591082331.jpg',
+        author: '原ゆたか／さく・え',
+      },
+    },
+  ]);
+}
+
+/** NDL の ISBN 検索の応答（dcndl:seriesTitle 付き） */
+function ndlWithSeries(isbn: string, title: string, seriesTitle: string): string {
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<rss xmlns:dcndl="http://ndl.go.jp/dcndl/terms/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:dc="http://purl.org/dc/elements/1.1/" version="2.0">
+  <channel>
+    <item>
+      <title>${title}</title>
+      <category>図書</category>
+      <dc:title>${title}</dc:title>
+      <dc:creator>原, ゆたか, 1953-</dc:creator>
+      <dc:publisher>ポプラ社</dc:publisher>
+      <dcndl:seriesTitle>${seriesTitle}</dcndl:seriesTitle>
+      <dc:identifier xsi:type="dcndl:ISBN">${isbn}</dc:identifier>
+    </item>
+  </channel>
+</rss>`;
+}
 
 /** 応答の指定: 本文（200）、HTTP ステータス、通信失敗、応答しない（タイムアウトまで） */
 type Reply = string | number | 'network-error' | 'hang';
@@ -141,11 +178,115 @@ describe('lookupByIsbn', () => {
     expect(c).toMatchObject({ title: 'ONE PIECE 104', seriesName: 'ONE PIECE', volume: 104, source: 'google' });
   });
 
-  it('すべて失敗・該当なしなら null', async () => {
+  it('すべて失敗なら null。Detailed では failed: true（見つからないのではなく、確かめられなかった）', async () => {
     mockApis({ openbd: 500, ndl: 'network-error', google: 429 });
     await expect(lookupByIsbn('9784834000825')).resolves.toBeNull();
+    await expect(lookupByIsbnDetailed('9784834000825')).resolves.toEqual({ candidate: null, failed: true });
+  });
+
+  it('すべて該当なしなら null。Detailed では failed: false', async () => {
     mockApis({ openbd: openbdNotFound, ndl: ndlEmpty, google: googleEmpty });
     await expect(lookupByIsbn('9784834000825')).resolves.toBeNull();
+    await expect(lookupByIsbnDetailed('9784834000825')).resolves.toEqual({ candidate: null, failed: false });
+  });
+
+  it('1 つでも失敗して見つからなければ failed: true（キー無しの Google の 429 だけでも）', async () => {
+    mockApis({ openbd: openbdNotFound, ndl: ndlEmpty, google: 429 });
+    await expect(lookupByIsbnDetailed('9784834000825')).resolves.toEqual({ candidate: null, failed: true });
+    vi.useFakeTimers();
+    mockApis({ openbd: 'hang', ndl: ndlEmpty, google: googleEmpty });
+    const p = lookupByIsbnDetailed('9784834000825');
+    await vi.advanceTimersByTimeAsync(8000);
+    await expect(p).resolves.toEqual({ candidate: null, failed: true });
+  });
+
+  it('見つかれば、途中の API が失敗していても failed: false', async () => {
+    mockApis({ openbd: 'network-error', ndl: ndlZorori, google: googleZorori });
+    const r = await lookupByIsbnDetailed('9784591025093');
+    expect(r.failed).toBe(false);
+    expect(r.candidate?.title).toBe('かいけつゾロリのドラゴンたいじ');
+  });
+
+  it('呼び出し側の中断は失敗に数えない', async () => {
+    mockApis({ openbd: 'hang' });
+    const ctrl = new AbortController();
+    const p = lookupByIsbnDetailed('9784591025093', { signal: ctrl.signal });
+    await Promise.resolve();
+    ctrl.abort();
+    await expect(p).resolves.toEqual({ candidate: null, failed: false });
+  });
+
+  describe('シリーズ名・巻数が定まらなければ NDL も呼ぶ', () => {
+    const ndlZorori36 = ndlWithSeries(
+      ZORORI_ISBN,
+      'かいけつゾロリのきょうふのエイリアン',
+      'ポプラ社の新・小さな童話 ; 205. かいけつゾロリシリーズ ; 36',
+    );
+
+    it.each([
+      ['レーベル名だけ', 'ポプラ社の新・小さな童話'],
+      ['空', ''],
+      ['巻次なし', 'かいけつゾロリシリーズ'],
+    ])('openBD のシリーズが%sなら、表紙があっても NDL のシリーズ・巻数を使う', async (_label, series) => {
+      const m = mockApis({ openbd: openbdZorori(series), ndl: ndlZorori36, google: googleZorori });
+      const c = await lookupByIsbn(ZORORI_ISBN);
+      expect(m.apis()).toEqual(['openbd', 'ndl']);
+      expect(c).toMatchObject({
+        title: 'かいけつゾロリのきょうふのエイリアン',
+        authors: ['原ゆたか'],
+        coverUrl: 'https://cover.openbd.jp/9784591082331.jpg',
+        seriesName: 'かいけつゾロリシリーズ',
+        volume: 36,
+        source: 'openbd',
+      });
+    });
+
+    it('openBD が揃っていて NDL が失敗・タイムアウトしたら、openBD の結果をそのまま返す（failed にしない）', async () => {
+      const expected = {
+        isbn: ZORORI_ISBN,
+        title: 'かいけつゾロリのきょうふのエイリアン',
+        authors: ['原ゆたか'],
+        publisher: 'ポプラ社',
+        coverUrl: 'https://cover.openbd.jp/9784591082331.jpg',
+        seriesName: null,
+        volume: null,
+        source: 'openbd',
+      };
+      const m = mockApis({ openbd: openbdZorori(''), ndl: 'network-error' });
+      await expect(lookupByIsbnDetailed(ZORORI_ISBN)).resolves.toEqual({ candidate: expected, failed: false });
+      expect(m.apis()).toEqual(['openbd', 'ndl']);
+
+      vi.useFakeTimers();
+      mockApis({ openbd: openbdZorori(''), ndl: 'hang' });
+      const p = lookupByIsbnDetailed(ZORORI_ISBN);
+      await vi.advanceTimersByTimeAsync(8000);
+      await expect(p).resolves.toEqual({ candidate: expected, failed: false });
+    });
+
+    it('シリーズのためだけに呼んだ NDL のシリーズに巻数が無ければ使わない（レーベル・叢書名のことが多い）', async () => {
+      const ndlLabel = ndlWithSeries(ZORORI_ISBN, 'かいけつゾロリのきょうふのエイリアン', 'たのしいどうわのほん');
+      mockApis({ openbd: openbdZorori(''), ndl: ndlLabel });
+      const c = await lookupByIsbn(ZORORI_ISBN);
+      expect(c).toMatchObject({ seriesName: null, volume: null });
+    });
+
+    it('シリーズも巻数もタイトルから分かる本は NDL を呼ばない（おしりたんてい・ONE PIECE は上のテスト）', async () => {
+      const body = JSON.stringify([
+        {
+          summary: {
+            isbn: '9784591153956',
+            title: 'おしりたんてい (3)',
+            publisher: 'ポプラ社',
+            cover: 'https://cover.openbd.jp/9784591153956.jpg',
+            author: 'トロル／さく・え',
+          },
+        },
+      ]);
+      const m = mockApis({ openbd: body, ndl: ndlEmpty });
+      const c = await lookupByIsbn('9784591153956');
+      expect(m.apis()).toEqual(['openbd']);
+      expect(c).toMatchObject({ seriesName: 'おしりたんてい', volume: 3 });
+    });
   });
 
   it('不正な ISBN は通信せず null', async () => {
@@ -187,7 +328,7 @@ describe('searchByTitle', () => {
     const m = mockApis({ ndl: ndlGuri, google: googleGuri });
     const list = await searchByTitle('ぐりとぐら');
     expect(m.apis().sort()).toEqual(['google', 'ndl']);
-    expect(m.calls).toContain('https://ndlsearch.ndl.go.jp/api/opensearch?title=%E3%81%90%E3%82%8A%E3%81%A8%E3%81%90%E3%82%89&cnt=20');
+    expect(m.calls).toContain('https://ndlsearch.ndl.go.jp/api/opensearch?title=%E3%81%90%E3%82%8A%E3%81%A8%E3%81%90%E3%82%89&cnt=50');
     expect(list.map((c) => [c.title, c.isbn])).toEqual([
       ['ぐりとぐら', '9784834000825'],
       ['ぐりとぐらとくるりくら', '9784834016222'],
@@ -251,8 +392,49 @@ describe('searchByTitle', () => {
     expect(list[0].isbn).toBe('9784591153956');
   });
 
-  it('すべて失敗しても例外を出さない', async () => {
+  it.each([
+    ['ISBN978-4-591-15395-6'],
+    ['ISBN 978-4-591-15395-6'],
+    ['978‐4‐591‐15395‐6'], // U+2010
+    ['ISBN：９７８－４－５９１－１５３９５－６'],
+  ])('「%s」も ISBN で引く（タイトルとして検索しない）', async (q) => {
+    const m = mockApis({ openbd: openbdOshiri });
+    const list = await searchByTitle(q);
+    expect(m.calls).toEqual(['https://api.openbd.jp/v1/get?isbn=9784591153956']);
+    expect(list.map((c) => c.isbn)).toEqual(['9784591153956']);
+  });
+
+  it('全角Ｘの ISBN-10 も ISBN で引く', async () => {
+    const m = mockApis({ openbd: openbdNotFound, ndl: ndlEmpty, google: googleEmpty });
+    await searchByTitle('０８０４４２９５７Ｘ');
+    expect(m.apis()).toEqual(['openbd', 'ndl', 'google']);
+    expect(m.calls[0]).toBe('https://api.openbd.jp/v1/get?isbn=9780804429573');
+  });
+
+  it('すべて失敗しても例外を出さない。Detailed では failed: true', async () => {
     mockApis({ ndl: 'network-error', google: 'network-error' });
     await expect(searchByTitle('ぐりとぐら')).resolves.toEqual([]);
+    await expect(searchByTitleDetailed('ぐりとぐら')).resolves.toEqual({ candidates: [], failed: true });
+  });
+
+  it('Detailed: 0 件で一方が失敗（NDL の失敗と Google の 429）なら failed: true、どちらも該当なしなら false', async () => {
+    mockApis({ ndl: 503, google: googleEmpty });
+    await expect(searchByTitleDetailed('ぐりとぐら')).resolves.toEqual({ candidates: [], failed: true });
+    mockApis({ ndl: ndlEmpty, google: 429 });
+    await expect(searchByTitleDetailed('ぐりとぐら')).resolves.toEqual({ candidates: [], failed: true });
+    mockApis({ ndl: ndlEmpty, google: googleEmpty });
+    await expect(searchByTitleDetailed('ぐりとぐら')).resolves.toEqual({ candidates: [], failed: false });
+  });
+
+  it('Detailed: 結果があれば一方が失敗していても failed: false', async () => {
+    mockApis({ ndl: ndlGuri, google: 429 });
+    const r = await searchByTitleDetailed('ぐりとぐら');
+    expect(r.failed).toBe(false);
+    expect(r.candidates.length).toBeGreaterThan(0);
+  });
+
+  it('Detailed: ISBN の入力で通信に失敗したら failed: true', async () => {
+    mockApis({ openbd: 'network-error', ndl: 'network-error', google: 429 });
+    await expect(searchByTitleDetailed('978-4-591-15395-6')).resolves.toEqual({ candidates: [], failed: true });
   });
 });

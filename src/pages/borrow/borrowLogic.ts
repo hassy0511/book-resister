@@ -4,6 +4,7 @@
  */
 import { addDays, diffDays, isDateString, parseDateString } from '../../lib/date';
 import { bookIdForIsbn, normalizeIsbn } from '../../lib/isbn';
+import { normalizeSeriesName, resolvePositionVolume } from '../../lib/series';
 import type { CartItem } from '../../state/borrowCartLogic';
 import type { Book, BookCandidate, DateString, Loan, LoanBookSnapshot, ReadStatus } from '../../types';
 
@@ -207,12 +208,34 @@ export function rankByAuthor<T extends { authors: string[] }>(list: readonly T[]
 
 /**
  * 検索欄の入力が ISBN として読めれば ISBN-13、読めなければ null。
- * 判定は searchByTitle（数字・X・ハイフン・空白だけの入力を ISBN として扱う）と同じ。
+ * 判定は searchByTitle と同じ normalizeIsbn（「ISBN978-4-…」「978‐4‐…」「…Ｘ」なども ISBN として扱う）。
  */
 export function isbnFromSearchQuery(query: string): string | null {
   const q = query.trim();
-  if (!q || !/^[\dXx\-ー－\s０-９]+$/.test(q)) return null;
-  return normalizeIsbn(q);
+  return q ? normalizeIsbn(q) : null;
+}
+
+/**
+ * 書誌の取得が通信の失敗（タイムアウト・通信エラー・429 など）で確かめられなかったときの案内
+ * （借りる確認・本の追加・既読チェック・スキャンの通知）。
+ */
+export const LOOKUP_FAILED_MESSAGE = '検索サービスにつながりませんでした（電波のよい場所で再取得するか、手入力してください）';
+
+/**
+ * 登録する巻数。上・中・下の「下」は既定で 2 巻（上下 2 冊組が多いため）。同じカートの同じシリーズに
+ * 「中」の本があれば 3 冊組とみなして 3 巻にする（resolvePositionVolume）。
+ * 結び付けた既存の本の巻数は変えない（利用者が手で直した巻数のことがあるため）。
+ */
+export function volumeForSave(item: CartItem, items: readonly CartItem[]): number | null {
+  const seriesName = item.seriesName?.trim();
+  if (item.existingBookId || !seriesName || !item.candidate) return item.volume;
+  const key = normalizeSeriesName(seriesName);
+  const siblings = items.flatMap((i) =>
+    i !== item && i.candidate && i.seriesName && normalizeSeriesName(i.seriesName) === key
+      ? [{ title: i.candidate.title, volume: i.volume }]
+      : [],
+  );
+  return resolvePositionVolume({ title: item.candidate.title, volume: item.volume }, siblings);
 }
 
 /**

@@ -37,6 +37,16 @@ export const NOTIFICATION_TITLE = '返却日のお知らせ';
 export const UNKNOWN_LOCATION_NAME = '（不明な場所）';
 export const NOTIFY_TIME_ZONE = 'Asia/Tokyo';
 
+/**
+ * 本文の長さの上限（文字数）。src/sw.ts の MAX_BODY_LENGTH（表示するときに切る長さ）と同じ値にすること。
+ * Apple の Web Push は暗号化後 4KB までなので、送る側でも切る（500 文字なら UTF-8 で 1.5KB 程度）。
+ */
+export const MAX_BODY_LENGTH = 500;
+/** 1 つの区分の行に名前を並べる場所の数。残りは「ほか N か所 M冊」にまとめる */
+export const MAX_LOCATIONS_PER_LINE = 3;
+/** 本文に出す場所の名前の長さの上限（画面で入力できる長さと同じ）。超えた分は「…」 */
+export const MAX_LOCATION_NAME_LENGTH = 40;
+
 /** 本文に並べる順番 */
 export const DUE_CATEGORY_ORDER: readonly DueCategory[] = ['overdue', 'tomorrow', 'in3days'];
 
@@ -81,8 +91,10 @@ export function classifyDue(dueOn: string, today: DateString): DueCategory | nul
 function locationName(locationId: string, locationsById: ReadonlyMap<string, NotifyLocation>): string | null {
   const name = locationsById.get(locationId)?.name;
   if (typeof name !== 'string') return null;
-  const trimmed = name.trim();
-  return trimmed === '' ? null : trimmed;
+  // 改行などは空白 1 つにする（本文の行が崩れないように）
+  const trimmed = name.replace(/[\u0000-\u001f\u007f\s]+/g, ' ').trim();
+  if (trimmed === '') return null;
+  return trimmed.length > MAX_LOCATION_NAME_LENGTH ? `${truncateUnits(trimmed, MAX_LOCATION_NAME_LENGTH)}…` : trimmed;
 }
 
 /** 場所の並び: 冊数の多い順 → 名前順。不明な場所は最後 */
@@ -125,10 +137,45 @@ export function summarizeDueLoans(
   };
 }
 
-/** 本文の 1 行。例「明日返却：○○図書館 3冊、△△保育園 1冊」 */
+/**
+ * 本文の 1 行。例「明日返却：○○図書館 3冊、△△保育園 1冊」。
+ * 場所が MAX_LOCATIONS_PER_LINE を超えるときは、冊数の多い順に先頭だけ並べ、残りを「ほか 2 か所 5冊」にまとめる。
+ */
 export function formatCategoryLine(category: DueCategory, items: readonly LocationCount[]): string {
-  const list = items.map((item) => `${item.name} ${item.count}冊`).join('、');
-  return `${DUE_CATEGORY_LABELS[category]}：${list}`;
+  const shown = items.length > MAX_LOCATIONS_PER_LINE ? items.slice(0, MAX_LOCATIONS_PER_LINE) : items;
+  const parts = shown.map((item) => `${item.name} ${item.count}冊`);
+  const rest = items.slice(shown.length);
+  if (rest.length > 0) {
+    const restCount = rest.reduce((sum, item) => sum + item.count, 0);
+    parts.push(`ほか ${rest.length} か所 ${restCount}冊`);
+  }
+  return `${DUE_CATEGORY_LABELS[category]}：${parts.join('、')}`;
+}
+
+/** text を max 文字（UTF-16 の長さ。sw.ts の slice と同じ数え方）以内にする。サロゲートペアは分けない */
+function truncateUnits(text: string, max: number): string {
+  if (text.length <= max) return text;
+  let out = '';
+  for (const ch of text) {
+    if (out.length + ch.length > max) break;
+    out += ch;
+  }
+  return out;
+}
+
+/** 本文を max 文字以内にする。できるだけ行の単位で切り、収まらない行は末尾を「…」にする */
+export function limitBody(lines: readonly string[], max: number = MAX_BODY_LENGTH): string {
+  let body = '';
+  for (const line of lines) {
+    const next = body === '' ? line : `${body}\n${line}`;
+    if (next.length <= max) {
+      body = next;
+      continue;
+    }
+    // 入りきらない行は、入る分だけ残して「…」で終える
+    return `${truncateUnits(next, max - 1).trimEnd()}…`;
+  }
+  return body;
 }
 
 /** 通知の tag。同じ日の通知は端末側で置き換わる */
@@ -138,7 +185,7 @@ export function notificationTag(today: DateString): string {
 
 /**
  * グループに送る通知を組み立てる。対象の本が 1 冊も無ければ null。
- * 本文は「延滞中 → 明日返却 → 3日後に返却」の順に改行区切り。
+ * 本文は「延滞中 → 明日返却 → 3日後に返却」の順に改行区切り（MAX_BODY_LENGTH 文字まで）。
  */
 export function buildGroupNotification(
   loans: readonly NotifyLoan[],
@@ -152,7 +199,7 @@ export function buildGroupNotification(
   if (lines.length === 0) return null;
   return {
     title: NOTIFICATION_TITLE,
-    body: lines.join('\n'),
+    body: limitBody(lines),
     tag: notificationTag(today),
   };
 }

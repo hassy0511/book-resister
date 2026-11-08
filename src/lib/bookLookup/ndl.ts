@@ -1,18 +1,24 @@
 /**
  * 国立国会図書館サーチ OpenSearch クライアント（RSS 2.0 の XML を DOMParser で読む）。
  * GET https://ndlsearch.ndl.go.jp/api/opensearch?isbn=<ISBN13>
- * GET https://ndlsearch.ndl.go.jp/api/opensearch?title=<書名>&cnt=20
+ * GET https://ndlsearch.ndl.go.jp/api/opensearch?title=<書名>&cnt=50
  * item の主な要素: dc:title, dc:creator, dc:publisher, dcndl:seriesTitle, dcndl:volume,
  *                 dc:identifier[xsi:type=dcndl:ISBN], category
  */
 import { normalizeIsbn } from '../isbn';
 import type { BookCandidate } from '../../types';
-import { fetchText, type FetchOptions } from './http';
+import { fetchTextResult, isLookupFailure, type FetchOptions, type SourceResult } from './http';
 import { fillMissing } from './merge';
 import { cleanAuthors, cleanPublisher, normalizeSpaces, normalizeTitle, resolveApiSeries } from './normalize';
 
 export const NDL_OPENSEARCH_ENDPOINT = 'https://ndlsearch.ndl.go.jp/api/opensearch';
-export const NDL_SEARCH_COUNT = 20;
+/**
+ * タイトル検索で NDL に求める件数。資料種別は絞らずに受け取り、記事・論文・雑誌などは parseEntries で除く。
+ * 除く分と、同じ ISBN の重複レコード（国立国会図書館・公共図書館など。searchByTitle の重複除去でまとまる）も
+ * 枠を使うため、表示する最大件数（searchByTitle の 20 件）より多めに取る。
+ * （資料種別の絞り込み mediatype は、受け付ける値を本番の API で確かめられないため使わない）
+ */
+export const NDL_SEARCH_COUNT = 50;
 
 const NS = {
   dc: 'http://purl.org/dc/elements/1.1/',
@@ -138,26 +144,42 @@ export function pickNdlByIsbn(xml: string, isbn13: string): BookCandidate | null
   return { ...merged, isbn: want };
 }
 
-/** ISBN で NDL サーチを引く。失敗・該当なしは null（例外は出さない） */
-export async function fetchNdlByIsbn(isbn13: string, opts: FetchOptions = {}): Promise<BookCandidate | null> {
-  const xml = await fetchText(ndlIsbnUrl(isbn13), opts);
-  if (xml === null) return null;
+/** ISBN で NDL サーチを引く。該当なしは value: null、通信の失敗は failed: true（例外は出さない） */
+export async function fetchNdlByIsbnDetailed(
+  isbn13: string,
+  opts: FetchOptions = {},
+): Promise<SourceResult<BookCandidate | null>> {
+  const res = await fetchTextResult(ndlIsbnUrl(isbn13), opts);
+  if (!res.ok) return { value: null, failed: isLookupFailure(res) };
   try {
-    return pickNdlByIsbn(xml, isbn13);
+    return { value: pickNdlByIsbn(res.data, isbn13), failed: false };
   } catch {
-    return null;
+    return { value: null, failed: true };
   }
 }
 
-/** 書名で NDL サーチを引く（最大 20 件）。失敗時は空配列 */
-export async function searchNdlByTitle(title: string, opts: FetchOptions = {}): Promise<BookCandidate[]> {
+/** ISBN で NDL サーチを引く。失敗・該当なしは null（例外は出さない） */
+export async function fetchNdlByIsbn(isbn13: string, opts: FetchOptions = {}): Promise<BookCandidate | null> {
+  return (await fetchNdlByIsbnDetailed(isbn13, opts)).value;
+}
+
+/** 書名で NDL サーチを引く（本らしいものだけ）。該当なしは空配列、通信の失敗は failed: true */
+export async function searchNdlByTitleDetailed(
+  title: string,
+  opts: FetchOptions = {},
+): Promise<SourceResult<BookCandidate[]>> {
   const q = normalizeSpaces(title);
-  if (!q) return [];
-  const xml = await fetchText(ndlTitleUrl(q), opts);
-  if (xml === null) return [];
+  if (!q) return { value: [], failed: false };
+  const res = await fetchTextResult(ndlTitleUrl(q), opts);
+  if (!res.ok) return { value: [], failed: isLookupFailure(res) };
   try {
-    return parseNdlOpenSearch(xml);
+    return { value: parseNdlOpenSearch(res.data), failed: false };
   } catch {
-    return [];
+    return { value: [], failed: true };
   }
+}
+
+/** 書名で NDL サーチを引く（本らしいものだけ）。失敗時は空配列 */
+export async function searchNdlByTitle(title: string, opts: FetchOptions = {}): Promise<BookCandidate[]> {
+  return (await searchNdlByTitleDetailed(title, opts)).value;
 }

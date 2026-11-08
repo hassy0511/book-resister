@@ -9,7 +9,15 @@ import { normalizeIsbn } from '../lib/isbn';
 import { normalizeSeriesName } from '../lib/series';
 import type { Book, BookCandidate, BookSource, DateString, WithId } from '../types';
 
-export type CartItemStatus = 'loading' | 'ready' | 'not-found';
+/**
+ * 書誌の状態。
+ *   - 'loading': 取得中
+ *   - 'ready': 書誌がある（または既存の本・手入力のタイトルがある）
+ *   - 'not-found': どの API にも無かった（タイトル手入力を促す）
+ *   - 'error': 通信の失敗（タイムアウト・通信エラー・429 など）で確かめられなかった。
+ *     タイトル手入力もでき、再取得（retryLookup）もできる。保存した内容を読み直すときは取得し直す
+ */
+export type CartItemStatus = 'loading' | 'ready' | 'not-found' | 'error';
 
 /**
  * 既存の本に結び付けたきっかけ。
@@ -247,11 +255,13 @@ export function applyExisting(item: CartItem, ex: ExistingBookInfo, matchedBy: C
 /**
  * ISBN からの書誌取得が終わったときの反映（既存の本の確認も終わった後に呼ぶ）。
  *   - 既存の本が反映済み → 空欄だけ補う（シリーズ未設定なら推定値を入れる）
- *   - 見つかった → ready
+ *   - 見つかった → ready（再取得の前に手入力したタイトル・著者があれば、それを残して空欄だけ補う）
  *   - 見つからない → not-found（タイトル手入力を促す）
+ *   - 通信の失敗で確かめられなかった（failed）→ error（再取得かタイトル手入力を促す）
+ * 手入力のタイトルは見つからない・失敗のときも残す（isItemResolved なので登録はできる）。
  * 取得中でも既存の本の反映済みでもない項目はそのまま返す。
  */
-export function applyLookup(item: CartItem, looked: BookCandidate | null): CartItem {
+export function applyLookup(item: CartItem, looked: BookCandidate | null, failed = false): CartItem {
   if (item.existingBookId && item.candidate) {
     let { seriesName, volume } = item;
     if (looked && blank(seriesName) && !blank(looked.seriesName)) {
@@ -270,15 +280,29 @@ export function applyLookup(item: CartItem, looked: BookCandidate | null): CartI
   }
   if (item.status !== 'loading') return item;
   if (looked) {
+    const fetched: BookCandidate = { ...looked, isbn: item.isbn ?? cartIsbn(looked.isbn), authors: [...looked.authors] };
     return {
       ...item,
       status: 'ready',
-      candidate: { ...looked, isbn: item.isbn ?? cartIsbn(looked.isbn), authors: [...looked.authors] },
+      // 再取得の前に利用者が入力したタイトル・著者は上書きしない
+      candidate: item.candidate && !blank(item.candidate.title) ? fillCandidateBlanks(item.candidate, fetched) : fetched,
       seriesName: blank(item.seriesName) ? looked.seriesName : item.seriesName,
       volume: item.volume ?? looked.volume,
     };
   }
-  return { ...item, status: item.candidate && !blank(item.candidate.title) ? 'ready' : 'not-found' };
+  // 再取得でも取れなければ、手入力のタイトルがあっても入力欄（と再取得）を出したままにする
+  if (failed) return { ...item, status: 'error' };
+  const titled = item.candidate != null && !blank(item.candidate.title) && item.candidate.source !== 'manual';
+  return { ...item, status: titled ? 'ready' : 'not-found' };
+}
+
+/**
+ * 書誌を取り直す（通信の失敗・見つからなかった ISBN の本を「取得中」に戻す。取得はカートが行う）。
+ * それ以外（取得中・書誌がある・ISBN が無い）はそのまま返す。
+ */
+export function retryLookup(item: CartItem): CartItem {
+  if (!item.isbn || (item.status !== 'error' && item.status !== 'not-found')) return item;
+  return { ...item, status: 'loading' };
 }
 
 /** 既存の本との結び付きを外す（タイトルで結び付けた場合は、結び付ける前の内容に戻す） */
@@ -336,7 +360,7 @@ export type StoredCart = {
   items: CartItem[];
 };
 
-const STATUSES: readonly CartItemStatus[] = ['loading', 'ready', 'not-found'];
+const STATUSES: readonly CartItemStatus[] = ['loading', 'ready', 'not-found', 'error'];
 const MATCHES: readonly CartMatch[] = ['isbn', 'title', 'chosen'];
 const SOURCES: readonly BookSource[] = ['openbd', 'ndl', 'google', 'manual'];
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -387,6 +411,8 @@ function parseItem(v: unknown): CartItem | null {
   let status: CartItemStatus = STATUSES.includes(v.status as CartItemStatus) ? (v.status as CartItemStatus) : 'loading';
   // 書誌が無い ready は取得し直す（ISBN も無ければ手入力に回す）
   if (status === 'ready' && !candidate) status = isbn ? 'loading' : 'not-found';
+  // 通信の失敗で取れなかった本は取得し直す
+  if (status === 'error') status = 'loading';
   if (status === 'loading' && !isbn) status = candidate ? 'ready' : 'not-found';
   const due = typeof v.dueOnOverride === 'string' && DATE_RE.test(v.dueOnOverride) ? v.dueOnOverride : null;
   const existingBookId = strOrNull(v.existingBookId);

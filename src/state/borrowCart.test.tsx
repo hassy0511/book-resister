@@ -14,6 +14,8 @@ const state = vi.hoisted(() => ({
 
 const api = vi.hoisted(() => ({
   lookupByIsbn: vi.fn(),
+  /** true なら、見つからなかったときに通信の失敗（failed）として返す */
+  lookupFailed: false,
   getBook: vi.fn(),
   findBookForCandidate: vi.fn(),
 }));
@@ -30,6 +32,10 @@ vi.mock('../data/books', () => ({
 }));
 vi.mock('../lib/bookLookup', () => ({
   lookupByIsbn: api.lookupByIsbn,
+  lookupByIsbnDetailed: async (isbn: string, opts?: unknown) => {
+    const candidate = (await api.lookupByIsbn(isbn, opts)) as BookCandidate | null;
+    return { candidate, failed: candidate === null && api.lookupFailed };
+  },
 }));
 
 import { BorrowCartProvider, useBorrowCart, type BorrowCart } from './borrowCart';
@@ -98,6 +104,7 @@ beforeEach(() => {
   state.group = { groupId: 'g1', loading: false };
   state.series = { data: [series('s1', 'ぐりとぐらシリーズ')], loading: false, error: null };
   api.lookupByIsbn.mockReset().mockResolvedValue(null);
+  api.lookupFailed = false;
   api.getBook.mockReset().mockResolvedValue(null);
   api.findBookForCandidate.mockReset().mockResolvedValue(null);
 });
@@ -160,6 +167,75 @@ describe('BorrowCartProvider', () => {
     });
     await flush();
     expect(cart.items[0].status).toBe('not-found');
+  });
+
+  it('通信の失敗で確かめられなければ error。retry で取り直す', async () => {
+    api.lookupFailed = true;
+    renderCart();
+    act(() => {
+      cart.addIsbn(ISBN);
+    });
+    await flush();
+    expect(cart.items[0].status).toBe('error');
+    expect(api.lookupByIsbn).toHaveBeenCalledTimes(1);
+
+    api.lookupByIsbn.mockResolvedValue(candidate());
+    act(() => {
+      cart.retry(ISBN);
+    });
+    expect(cart.items[0].status).toBe('loading');
+    await flush();
+    expect(api.lookupByIsbn).toHaveBeenCalledTimes(2);
+    expect(cart.items[0]).toMatchObject({ status: 'ready' });
+    expect(cart.items[0].candidate?.title).toBe('ぐりとぐら');
+  });
+
+  it('error の本をもう一度読み取ると、duplicate を返して取り直す', async () => {
+    api.lookupFailed = true;
+    renderCart();
+    act(() => {
+      cart.addIsbn(ISBN);
+    });
+    await flush();
+    expect(cart.items[0].status).toBe('error');
+    api.lookupByIsbn.mockResolvedValue(candidate());
+    let r = '';
+    act(() => {
+      r = cart.addIsbn(ISBN);
+    });
+    expect(r).toBe('duplicate');
+    expect(cart.items).toHaveLength(1);
+    await flush();
+    expect(api.lookupByIsbn).toHaveBeenCalledTimes(2);
+    expect(cart.items[0].status).toBe('ready');
+  });
+
+  it('再取得の前に入力したタイトルは、再取得で見つかっても上書きしない', async () => {
+    api.lookupFailed = true;
+    renderCart();
+    act(() => {
+      cart.addIsbn(ISBN);
+    });
+    await flush();
+    act(() => {
+      cart.update(ISBN, { candidate: { ...candidate({ title: '手で入れたタイトル', coverUrl: null, publisher: null }), source: 'manual' } });
+    });
+    api.lookupByIsbn.mockResolvedValue(candidate());
+    act(() => {
+      cart.retry(ISBN);
+    });
+    await flush();
+    expect(cart.items[0].status).toBe('ready');
+    expect(cart.items[0].candidate).toMatchObject({ title: '手で入れたタイトル', coverUrl: 'https://example.com/g.jpg', publisher: '福音館書店' });
+  });
+
+  it('復元時に error の本は取り直す', async () => {
+    localStorage.setItem(CART_STORAGE_KEY, serializeCart('g1', [{ ...newIsbnItem(ISBN), status: 'error' }]));
+    api.lookupByIsbn.mockResolvedValue(candidate());
+    renderCart();
+    await flush();
+    expect(api.lookupByIsbn).toHaveBeenCalledTimes(1);
+    expect(cart.items[0].status).toBe('ready');
   });
 
   it('グループ未参加でも落ちない（既存の本は確認しない）', async () => {

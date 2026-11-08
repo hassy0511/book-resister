@@ -3,6 +3,7 @@ import { assertFails, assertSucceeds, type RulesTestEnvironment } from '@firebas
 import {
   collection,
   deleteDoc,
+  deleteField,
   doc,
   getDoc,
   getDocs,
@@ -18,6 +19,7 @@ import {
   OTHER_GROUP_INVITE_CODE,
   PAST,
   VALID_INVITE_CODE,
+  daysFromNow,
   dbOf,
   seed,
   seedFamilies,
@@ -77,6 +79,22 @@ function createGroupBatch(
       );
     }
   }
+  return batch.commit();
+}
+
+/** 他のメンバーを外す（招待の一括無効化と同じバッチ。data/members.ts の removeMember と同じ形） */
+function removeMemberBatch(db: Firestore, gid: string, memberUid: string): Promise<void> {
+  const batch = writeBatch(db);
+  batch.update(doc(db, 'groups', gid), { invitesValidAfter: serverTimestamp() });
+  batch.delete(doc(db, 'groups', gid, 'members', memberUid));
+  return batch.commit();
+}
+
+/** 招待で参加する（GroupProvider.joinGroup と同じ形。users は既にある前提で update） */
+function joinWithInvite(db: Firestore, uid: string, gid: string, inviteCode: string | null): Promise<void> {
+  const batch = writeBatch(db);
+  batch.set(doc(db, 'groups', gid, 'members', uid), { displayName: 'なまえ', joinedAt: serverTimestamp(), inviteCode });
+  batch.update(doc(db, 'users', uid), { displayName: 'なまえ', groupId: gid, updatedAt: serverTimestamp() });
   return batch.commit();
 }
 
@@ -239,6 +257,19 @@ describe('groups/{gid}', () => {
 
   it('非メンバーは変更できない', async () => {
     await assertFails(updateDoc(doc(as('carol'), 'groups/g1'), { name: '乗っ取り' }));
+    await assertFails(updateDoc(doc(as('carol'), 'groups/g1'), { invitesValidAfter: serverTimestamp() }));
+  });
+
+  it('メンバーは招待をすべて無効にできる（invitesValidAfter は今の時刻だけ）', async () => {
+    const ref = doc(as('bob'), 'groups/g1');
+    await assertFails(updateDoc(ref, { invitesValidAfter: PAST }));
+    await assertFails(updateDoc(ref, { invitesValidAfter: '2026-11-08' }));
+    await assertSucceeds(updateDoc(ref, { invitesValidAfter: serverTimestamp() }));
+    // 2 回目も可。名前の変更も引き続きできる
+    await assertSucceeds(updateDoc(ref, { invitesValidAfter: serverTimestamp() }));
+    await assertSucceeds(updateDoc(ref, { name: '山田ファミリー' }));
+    // 消して元に戻すことはできない
+    await assertFails(updateDoc(ref, { invitesValidAfter: deleteField() }));
   });
 
   it('削除はできない', async () => {
@@ -348,13 +379,82 @@ describe('groups/{gid}/members/{uid}', () => {
     await assertSucceeds(batch.commit());
   });
 
-  it('他のメンバーの情報は変更・削除できない', async () => {
+  it('他のメンバーの情報は変更できない', async () => {
     await assertFails(updateDoc(doc(as('alice'), 'groups/g1/members/bob'), { displayName: 'x' }));
-    await assertFails(deleteDoc(doc(as('alice'), 'groups/g1/members/bob')));
   });
 
   it('本人は抜けられる（削除）。抜けた後はグループを読めない', async () => {
     await assertSucceeds(deleteDoc(doc(as('bob'), 'groups/g1/members/bob')));
     await assertFails(getDoc(doc(as('bob'), 'groups/g1')));
+  });
+});
+
+describe('メンバーを外す（F-07）', () => {
+  it('メンバーは他のメンバーを外せる（招待の一括無効化と同じバッチ）。作成者でなくても可（F-05）', async () => {
+    await assertSucceeds(removeMemberBatch(as('bob'), 'g1', 'alice'));
+  });
+
+  it('招待を無効にしないまま他のメンバーだけを消すことはできない', async () => {
+    await assertFails(deleteDoc(doc(as('alice'), 'groups/g1/members/bob')));
+    // 名前の変更だけでは代わりにならない
+    const db = as('alice');
+    const batch = writeBatch(db);
+    batch.update(doc(db, 'groups/g1'), { name: '山田ファミリー' });
+    batch.delete(doc(db, 'groups/g1/members/bob'));
+    await assertFails(batch.commit());
+  });
+
+  it('非メンバー・未ログインは外せない', async () => {
+    await assertFails(removeMemberBatch(as('carol'), 'g1', 'bob'));
+    await assertFails(removeMemberBatch(as('dave'), 'g1', 'bob'));
+    await assertFails(removeMemberBatch(anonymous(), 'g1', 'bob'));
+  });
+
+  it('外された人はグループのデータを読めない', async () => {
+    await assertSucceeds(getDoc(doc(as('bob'), 'groups/g1')));
+    await removeMemberBatch(as('alice'), 'g1', 'bob');
+    await assertFails(getDoc(doc(as('bob'), 'groups/g1')));
+    await assertFails(getDocs(collection(as('bob'), 'groups/g1/members')));
+    await assertFails(getDocs(collection(as('bob'), 'groups/g1/loans')));
+  });
+
+  it('外された人は、手元の招待リンク（参加に使ったもの・自分で作ったもの）では戻れない', async () => {
+    // bob が外される前に自分で招待を作っておく
+    const ownCode = 'BobsOwnInvite0123456789';
+    await assertSucceeds(
+      setDoc(doc(as('bob'), 'invites', ownCode), {
+        groupId: 'g1',
+        groupName: '山田家',
+        createdBy: 'bob',
+        createdAt: serverTimestamp(),
+        expiresAt: daysFromNow(7),
+      }),
+    );
+    await removeMemberBatch(as('alice'), 'g1', 'bob');
+    await assertFails(joinWithInvite(as('bob'), 'bob', 'g1', VALID_INVITE_CODE));
+    await assertFails(joinWithInvite(as('bob'), 'bob', 'g1', ownCode));
+    await assertFails(joinWithInvite(as('bob'), 'bob', 'g1', null));
+  });
+
+  it('外した後に作った招待なら参加できる', async () => {
+    await removeMemberBatch(as('alice'), 'g1', 'bob');
+    const code = 'AfterRemoval0123456789ab';
+    await assertSucceeds(
+      setDoc(doc(as('alice'), 'invites', code), {
+        groupId: 'g1',
+        groupName: '山田家',
+        createdBy: 'alice',
+        createdAt: serverTimestamp(),
+        expiresAt: daysFromNow(7),
+      }),
+    );
+    await assertSucceeds(joinWithInvite(as('bob'), 'bob', 'g1', code));
+  });
+
+  it('グループを作った人は外されても招待なしで戻れる', async () => {
+    await assertSucceeds(removeMemberBatch(as('bob'), 'g1', 'alice'));
+    await assertFails(getDoc(doc(as('alice'), 'groups/g1')));
+    await assertSucceeds(joinWithInvite(as('alice'), 'alice', 'g1', null));
+    await assertSucceeds(getDoc(doc(as('alice'), 'groups/g1')));
   });
 });

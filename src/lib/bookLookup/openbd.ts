@@ -3,10 +3,12 @@
  * GET https://api.openbd.jp/v1/get?isbn=<ISBN13> → [ { onix, hanmoto, summary } | null ]
  * summary: { isbn, title, volume, series, publisher, pubdate, cover, author }
  * onix.DescriptiveDetail: TitleDetail（書名・副題・巻次）、Collection（シリーズ・レーベル）、Contributor（著者）
+ * v1 は 2023-07 に提供終了が告知され、2023-08 以降は国立国会図書館の書誌（CC-BY）を元にした代替データを
+ * 同じ仕様で返している（少なくとも 60 か月。2028 年ごろに見直す。docs/design.md 4.4）。
  */
 import { normalizeIsbn } from '../isbn';
 import type { BookCandidate } from '../../types';
-import { fetchJson, type FetchOptions } from './http';
+import { fetchJsonResult, isLookupFailure, type FetchOptions, type SourceResult } from './http';
 import { asArray, asRecord, asString, pick } from './json';
 import { cleanAuthors, cleanPublisher, normalizeTitle, resolveApiSeries, toHttpsUrl } from './normalize';
 
@@ -116,13 +118,21 @@ export function parseOpenBdResponse(json: unknown, isbn13?: string): BookCandida
   return (want && items.find((c) => c.isbn === want)) || items[0];
 }
 
+/** ISBN で openBD を引く。未登録は value: null、通信の失敗は failed: true（例外は出さない） */
+export async function fetchOpenBdByIsbnDetailed(
+  isbn13: string,
+  opts: FetchOptions = {},
+): Promise<SourceResult<BookCandidate | null>> {
+  const res = await fetchJsonResult(openBdUrl(isbn13), opts);
+  if (!res.ok) return { value: null, failed: isLookupFailure(res) };
+  try {
+    return { value: parseOpenBdResponse(res.data, isbn13), failed: false };
+  } catch {
+    return { value: null, failed: true };
+  }
+}
+
 /** ISBN で openBD を引く。失敗・未登録は null（例外は出さない） */
 export async function fetchOpenBdByIsbn(isbn13: string, opts: FetchOptions = {}): Promise<BookCandidate | null> {
-  const json = await fetchJson(openBdUrl(isbn13), opts);
-  if (json === null) return null;
-  try {
-    return parseOpenBdResponse(json, isbn13);
-  } catch {
-    return null;
-  }
+  return (await fetchOpenBdByIsbnDetailed(isbn13, opts)).value;
 }

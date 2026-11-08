@@ -24,6 +24,11 @@ export interface Group {
   name: string;
   createdBy: string;
   createdAt: Timestamp;
+  /**
+   * これより前に作られた招待では参加できない（「これまでの招待リンクをすべて無効にする」・メンバーを外したときの時刻。F-07）。
+   * 一度も無効にしていなければ無い
+   */
+  invitesValidAfter?: Timestamp;
 }
 
 /** groups/{groupId}/members/{uid} */

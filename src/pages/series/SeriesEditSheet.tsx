@@ -135,7 +135,7 @@ export function SeriesEditSheet({ open, onClose, groupId, series, maxVolume }: S
           />
           {duplicate ? (
             <Button variant="secondary" block onClick={() => setConfirm('merge')} disabled={saving || booksLoading}>
-              このシリーズを「{duplicate.name}」にまとめる
+              「{duplicate.name}」にまとめる
             </Button>
           ) : null}
           <NumberField

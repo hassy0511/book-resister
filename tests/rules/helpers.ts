@@ -179,7 +179,11 @@ export function newPushSubscription(uid: string, overrides: DocumentData = {}): 
   return {
     uid,
     endpoint: 'https://web.push.apple.com/QGxhYmVsLWZvci10ZXN0',
-    keys: { p256dh: 'BPublicKeyForTest', auth: 'AuthSecret' },
+    // 実際の形式（p256dh は 65 バイト、auth は 16 バイトの base64url）。ルールで形式を確かめている
+    keys: {
+      p256dh: 'BEl62iUYgUivxIkv69yViEuiBIa-Ib9-SkvMeAtA3LFgDzkrxZJjSgSnfckjBJuBkr3qBUYIHBQFLXYp5Nksh8U',
+      auth: '5_uHGMO9sKvEahQK3OF5Bw',
+    },
     userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)',
     createdAt: serverTimestamp(),
     ...overrides,

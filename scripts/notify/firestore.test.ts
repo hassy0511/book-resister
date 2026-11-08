@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { toNotifyLoan, toNotifyLocation, toStoredSubscription } from './firestore';
+import { readSubscription, toNotifyLoan, toNotifyLocation, toStoredSubscription } from './firestore';
 import { isGoneStatus } from './send';
+
+const P256DH = 'BEl62iUYgUivxIkv69yViEuiBIa-Ib9-SkvMeAtA3LFgDzkrxZJjSgSnfckjBJuBkr3qBUYIHBQFLXYp5Nksh8U';
+const AUTH = '5_uHGMO9sKvEahQK3OF5Bw';
 
 describe('toNotifyLoan', () => {
   it('必要な項目だけを取り出す', () => {
@@ -29,8 +32,9 @@ describe('toStoredSubscription', () => {
   const valid = {
     uid: 'u1',
     endpoint: 'https://web.push.apple.com/abc',
-    keys: { p256dh: 'BPx', auth: 'au' },
+    keys: { p256dh: P256DH, auth: AUTH },
     userAgent: 'iPhone',
+    createdAt: { toMillis: () => 1_700_000_000_000 },
   };
 
   it('送信に必要な項目を取り出す', () => {
@@ -38,15 +42,55 @@ describe('toStoredSubscription', () => {
       id: 'hash',
       uid: 'u1',
       endpoint: 'https://web.push.apple.com/abc',
-      keys: { p256dh: 'BPx', auth: 'au' },
+      keys: { p256dh: P256DH, auth: AUTH },
+      createdAtMillis: 1_700_000_000_000,
     });
+    expect(toStoredSubscription('hash', { ...valid, createdAt: null })?.createdAtMillis).toBe(0);
   });
 
   it('endpoint が https でない・鍵が欠けていれば null', () => {
     expect(toStoredSubscription('h', { ...valid, endpoint: 'http://example.com' })).toBeNull();
-    expect(toStoredSubscription('h', { ...valid, keys: { p256dh: 'BPx' } })).toBeNull();
-    expect(toStoredSubscription('h', { ...valid, keys: { p256dh: '', auth: 'au' } })).toBeNull();
+    expect(toStoredSubscription('h', { ...valid, keys: { p256dh: P256DH } })).toBeNull();
+    expect(toStoredSubscription('h', { ...valid, keys: { p256dh: '', auth: AUTH } })).toBeNull();
     expect(toStoredSubscription('h', { ...valid, uid: undefined })).toBeNull();
+  });
+});
+
+describe('readSubscription', () => {
+  const valid = {
+    uid: 'u1',
+    endpoint: 'https://web.push.apple.com/abc',
+    keys: { p256dh: P256DH, auth: AUTH },
+  };
+
+  it('対応していないプッシュサービスの endpoint は送らない（第三者のサーバーへ送らない）', () => {
+    for (const endpoint of [
+      'https://attacker.example/x',
+      'https://victim.example/api/anything?a=1',
+      'https://127.0.0.1:1/x',
+    ]) {
+      expect(readSubscription('h', { ...valid, endpoint })).toEqual({ ok: false, problem: 'endpoint' });
+    }
+  });
+
+  it('鍵の形式が違えば送らない（送ると暗号化で失敗し、毎朝ジョブが失敗する）', () => {
+    expect(readSubscription('h', { ...valid, keys: { p256dh: 'BPx', auth: AUTH } })).toEqual({
+      ok: false,
+      problem: 'keys',
+    });
+    expect(readSubscription('h', { ...valid, keys: { p256dh: P256DH, auth: 'au' } })).toEqual({
+      ok: false,
+      problem: 'keys',
+    });
+  });
+
+  it('項目の型が違えば format', () => {
+    expect(readSubscription('h', { ...valid, keys: 'x' })).toEqual({ ok: false, problem: 'format' });
+    expect(readSubscription('h', { ...valid, endpoint: 1 })).toEqual({ ok: false, problem: 'format' });
+  });
+
+  it('正しい購読は ok', () => {
+    expect(readSubscription('h', valid).ok).toBe(true);
   });
 });
 

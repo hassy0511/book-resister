@@ -6,6 +6,7 @@
  *   cart.addExistingBook(book)    // グループ内の本をもう一度借りる
  *
  * - 内容は localStorage に保存する（読めない環境では保存しないだけ）。復元時に「取得中」の本は取得し直す。
+ * - 書誌の取得が通信の失敗で確かめられなかった本は status 'error'。retry(key)・同じ本の読み直し・復元で取り直す。
  * - 既存の本（ISBN の本は ID が isbn-<ISBN13>、無い本はタイトル完全一致）があれば existingBookId を設定し、
  *   本の情報とシリーズを優先して表示する。シリーズ名・巻数の初期値は「既存の本のシリーズ」＞「候補の値」。
  *   どうやって結び付けたかは matchedBy に残す。タイトルの一致は別の本のこともあるので、
@@ -27,7 +28,7 @@ import {
 import { findBookForCandidate, getBook } from '../data/books';
 import { useSeriesList } from '../data/series';
 import { useGroup } from '../group/GroupProvider';
-import { lookupByIsbn } from '../lib/bookLookup';
+import { lookupByIsbnDetailed } from '../lib/bookLookup';
 import { bookIdForIsbn } from '../lib/isbn';
 import type { Book, BookCandidate, Series, WithId } from '../types';
 import {
@@ -42,6 +43,7 @@ import {
   newIsbnItem,
   parseStoredCart,
   randomCartKey,
+  retryLookup,
   serializeCart,
   type AddResult,
   type CartItem,
@@ -60,6 +62,8 @@ export type BorrowCart = {
   addCandidate(c: BookCandidate): AddResult;
   addExistingBook(book: WithId<Book>): AddResult;
   update(key: string, patch: CartItemPatch): void;
+  /** 通信の失敗などで取れなかった ISBN の本の書誌を取り直す */
+  retry(key: string): void;
   remove(key: string): void;
   clear(): void;
 };
@@ -232,9 +236,9 @@ export function BorrowCartProvider({ children }: { children: ReactNode }) {
   const resolveIsbnItem = useCallback(
     async (key: string, isbn: string) => {
       const existingP = findExisting((gid) => getBook(gid, bookIdForIsbn(isbn)));
-      const lookupP = lookupByIsbn(isbn).catch((e: unknown) => {
+      const lookupP = lookupByIsbnDetailed(isbn).catch((e: unknown) => {
         console.warn('[borrowCart] 書誌を取得できませんでした', e);
-        return null;
+        return { candidate: null, failed: true };
       });
       // 既存の本が先に分かれば、書誌の取得を待たずに表示する
       void existingP.then((ex) => {
@@ -243,7 +247,7 @@ export function BorrowCartProvider({ children }: { children: ReactNode }) {
       const [ex, looked] = await Promise.all([existingP, lookupP]);
       updateItem(key, (i) => {
         const base = ex && i.existingBookId !== ex.book.id ? applyExisting(i, ex) : i;
-        return applyLookup(base, looked);
+        return applyLookup(base, looked.candidate, looked.failed);
       });
     },
     [findExisting, updateItem],
@@ -268,11 +272,16 @@ export function BorrowCartProvider({ children }: { children: ReactNode }) {
     (isbn13: string): AddResult => {
       const isbn = cartIsbn(isbn13);
       if (!isbn) return 'duplicate';
-      if (findDuplicate(itemsRef.current, { key: isbn, isbn })) return 'duplicate';
+      const dup = findDuplicate(itemsRef.current, { key: isbn, isbn });
+      if (dup) {
+        // 通信の失敗で取れなかった本を読み直したら、取り直す
+        if (dup.status === 'error') updateItem(dup.key, retryLookup);
+        return 'duplicate';
+      }
       commit((prev) => [...prev, newIsbnItem(isbn)]);
       return 'added';
     },
-    [commit],
+    [commit, updateItem],
   );
 
   const addCandidate = useCallback(
@@ -321,6 +330,14 @@ export function BorrowCartProvider({ children }: { children: ReactNode }) {
     [updateItem],
   );
 
+  // 「取得中」に戻すと、上の effect が取得し直す
+  const retry = useCallback(
+    (key: string) => {
+      updateItem(key, retryLookup);
+    },
+    [updateItem],
+  );
+
   const remove = useCallback(
     (key: string) => {
       commit((prev) => (prev.some((i) => i.key === key) ? prev.filter((i) => i.key !== key) : prev));
@@ -333,8 +350,8 @@ export function BorrowCartProvider({ children }: { children: ReactNode }) {
   }, [commit]);
 
   const value = useMemo<BorrowCart>(
-    () => ({ items, addIsbn, addCandidate, addExistingBook, update, remove, clear }),
-    [items, addIsbn, addCandidate, addExistingBook, update, remove, clear],
+    () => ({ items, addIsbn, addCandidate, addExistingBook, update, retry, remove, clear }),
+    [items, addIsbn, addCandidate, addExistingBook, update, retry, remove, clear],
   );
 
   return (

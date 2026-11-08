@@ -3,15 +3,18 @@
  *
  *   npx tsx scripts/notify/index.ts [--dry-run] [--today YYYY-MM-DD]
  *
- * 全グループの貸出中の本を調べ、延滞・明日返却・3日後に返却の本があれば、
- * そのグループのメンバーの全端末に Web Push を 1 通送る。
- * 1 グループの失敗で全体は止めない。失敗が 1 件でもあれば終了コード 1。
+ * NOTIFY_GROUP_IDS のグループ（未設定なら全グループ）の貸出中の本を調べ、延滞・明日返却・3日後に返却の本があれば、
+ * そのグループのメンバーの端末に Web Push を 1 通ずつ送る。
+ * 1 グループの失敗・遅れで全体は止めない（グループは GROUP_CONCURRENCY 個ずつ並行に処理し、
+ * 1 件の送信には締め切りがある）。失敗が 1 件でもあれば終了コード 1。
+ * 送れない購読（対応していない送信先・鍵の形式の誤り）は読み飛ばして警告だけ出す（失敗に数えない）。
  */
 import {
   ConfigError,
   parseArgs,
   readAppUrl,
   readFirebaseTarget,
+  readGroupAllowlist,
   readProxy,
   readVapidConfig,
   type CliOptions,
@@ -26,7 +29,8 @@ import {
   type AdminContext,
 } from './firestore';
 import { buildGroupNotification, buildPushPayload, tokyoToday } from './messages';
-import { configureVapid, describeSubscription, sendPush } from './send';
+import { configureVapid, describeSubscription, mapWithConcurrency, sendPush } from './send';
+import { MAX_SUBSCRIPTIONS_PER_GROUP, selectTargets } from './subscription';
 import type { DateString } from '../../src/types';
 
 interface RunSettings {
@@ -35,7 +39,14 @@ interface RunSettings {
   today: DateString;
   appUrl: string;
   proxy: string | undefined;
+  /** 通知するグループ（null なら全グループ） */
+  groupAllowlist: string[] | null;
 }
+
+/** 同時に処理するグループの数（1 グループの送信が遅れても他のグループを待たせない） */
+const GROUP_CONCURRENCY = 4;
+/** 1 グループの中で同時に送る数 */
+const SEND_CONCURRENCY = 5;
 
 interface Stats {
   groups: number;
@@ -43,6 +54,8 @@ interface Stats {
   sent: number;
   removed: number;
   failed: number;
+  /** 送らずに読み飛ばした購読（対応していない送信先・鍵の誤り・上限超え） */
+  skippedSubscriptions: number;
 }
 
 function errorMessage(e: unknown): string {
@@ -69,14 +82,33 @@ function readSettings(argv: readonly string[], env: NodeJS.ProcessEnv): RunSetti
     today: options.today ?? tokyoToday(),
     appUrl,
     proxy: readProxy(env),
+    groupAllowlist: readGroupAllowlist(env),
   };
+}
+
+/** ログに出す利用者の入力（改行・制御文字を空白にし、長さを抑える） */
+function forLog(text: string, max = 50): string {
+  const oneLine = text.replace(/[\u0000-\u001f\u007f\s]+/g, ' ').trim();
+  return oneLine.length > max ? `${oneLine.slice(0, max)}…` : oneLine;
 }
 
 async function processGroup(ctx: AdminContext, groupId: string, settings: RunSettings, stats: Stats): Promise<void> {
   const label = `[${groupId}]`;
   const data = await loadGroupData(ctx.db, groupId);
+  if (!data.exists) {
+    stats.failed++;
+    console.error(`${label} グループが見つかりません（NOTIFY_GROUP_IDS のグループ ID を確認してください）`);
+    return;
+  }
+  console.log(`${label} グループ「${data.groupName ? forLog(data.groupName) : '（名前なし）'}」`);
   if (data.skippedDocs > 0) {
     console.warn(`${label} 形式が正しくないドキュメントを ${data.skippedDocs} 件読み飛ばしました`);
+  }
+  if (data.skippedSubscriptions > 0) {
+    stats.skippedSubscriptions += data.skippedSubscriptions;
+    console.warn(
+      `${label} 送れない購読（対応していない送信先・形式の正しくない鍵）を ${data.skippedSubscriptions} 件読み飛ばしました`,
+    );
   }
 
   const notification = buildGroupNotification(data.loans, data.locationsById, settings.today);
@@ -87,10 +119,13 @@ async function processGroup(ctx: AdminContext, groupId: string, settings: RunSet
   stats.notifiedGroups++;
   console.log(`${label} 通知内容:\n${indent(notification.body)}`);
 
-  // 退会などでメンバーでなくなった人の端末には送らない
-  const targets = data.subscriptions.filter((sub) => data.memberUids.has(sub.uid));
-  const skipped = data.subscriptions.length - targets.length;
-  if (skipped > 0) console.log(`${label} メンバー以外の購読 ${skipped} 件には送りません`);
+  // 退会などでメンバーでなくなった人の端末には送らない。数が多すぎるときは新しいものから上限まで
+  const { targets, nonMembers, overLimit } = selectTargets(data.subscriptions, data.memberUids);
+  if (nonMembers > 0) console.log(`${label} メンバー以外の購読 ${nonMembers} 件には送りません`);
+  if (overLimit > 0) {
+    stats.skippedSubscriptions += overLimit;
+    console.warn(`${label} 購読が多すぎるため、古い ${overLimit} 件には送りません（上限 ${MAX_SUBSCRIPTIONS_PER_GROUP} 件）`);
+  }
   if (targets.length === 0) {
     console.log(`${label} 通知を受け取る端末が登録されていません`);
     return;
@@ -103,9 +138,10 @@ async function processGroup(ctx: AdminContext, groupId: string, settings: RunSet
   }
 
   const payload = buildPushPayload(notification, settings.appUrl);
-  const results = await Promise.all(
-    targets.map(async (sub) => ({ sub, outcome: await sendPush(sub, payload, { proxy: settings.proxy }) })),
-  );
+  const results = await mapWithConcurrency(targets, SEND_CONCURRENCY, async (sub) => ({
+    sub,
+    outcome: await sendPush(sub, payload, { proxy: settings.proxy }),
+  }));
   for (const { sub, outcome } of results) {
     const who = describeSubscription(sub);
     switch (outcome.kind) {
@@ -131,6 +167,15 @@ async function processGroup(ctx: AdminContext, groupId: string, settings: RunSet
   }
 }
 
+/** NOTIFY_GROUP_IDS が未設定のときの警告（GitHub Actions では実行結果の画面にも出す） */
+function warnNoAllowlist(): void {
+  const message =
+    'NOTIFY_GROUP_IDS が設定されていないため、すべてのグループを処理します。家族以外の人が作ったグループにも送信するので、' +
+    'GitHub の Variables に NOTIFY_GROUP_IDS（ログの [ ] 内のグループ ID）を登録してください（docs/setup.md 手順 7）。';
+  if (process.env.GITHUB_ACTIONS === 'true') console.log(`::warning::${message}`);
+  else console.warn(`警告: ${message}`);
+}
+
 async function main(): Promise<number> {
   let settings: RunSettings;
   try {
@@ -147,7 +192,7 @@ async function main(): Promise<number> {
   const where = settings.target.kind === 'emulator' ? `エミュレータ ${settings.target.host}` : '本番';
   console.log(`返却日の通知: ${settings.today}（日本時間）${mode}`);
 
-  const stats: Stats = { groups: 0, notifiedGroups: 0, sent: 0, removed: 0, failed: 0 };
+  const stats: Stats = { groups: 0, notifiedGroups: 0, sent: 0, removed: 0, failed: 0, skippedSubscriptions: 0 };
   let ctx: AdminContext;
   try {
     ctx = openFirestore(settings.target);
@@ -158,21 +203,27 @@ async function main(): Promise<number> {
   console.log(`Firestore: ${ctx.projectId}（${where}）`);
   try {
     let groupIds: string[];
-    try {
-      groupIds = await listGroupIds(ctx.db);
-    } catch (e) {
-      console.error(`グループの一覧を読めませんでした: ${errorMessage(e)}`);
-      return 1;
+    if (settings.groupAllowlist) {
+      groupIds = settings.groupAllowlist;
+      console.log(`通知するグループ: ${groupIds.length} 件（NOTIFY_GROUP_IDS）`);
+    } else {
+      warnNoAllowlist();
+      try {
+        groupIds = await listGroupIds(ctx.db);
+      } catch (e) {
+        console.error(`グループの一覧を読めませんでした: ${errorMessage(e)}`);
+        return 1;
+      }
     }
     stats.groups = groupIds.length;
-    for (const groupId of groupIds) {
+    await mapWithConcurrency(groupIds, GROUP_CONCURRENCY, async (groupId) => {
       try {
         await processGroup(ctx, groupId, settings, stats);
       } catch (e) {
         stats.failed++;
         console.error(`[${groupId}] 処理に失敗しました: ${errorMessage(e)}`);
       }
-    }
+    });
   } finally {
     await closeFirestore(ctx).catch(() => undefined);
   }
@@ -184,16 +235,24 @@ async function main(): Promise<number> {
   } else {
     console.log(`送信成功: ${stats.sent} / 削除した購読: ${stats.removed} / 失敗: ${stats.failed}`);
   }
+  if (stats.skippedSubscriptions > 0) {
+    console.warn(`送らずに読み飛ばした購読: ${stats.skippedSubscriptions}（失敗には数えません）`);
+  }
+  if (!settings.groupAllowlist) warnNoAllowlist();
   if (stats.failed > 0) console.error(`失敗が ${stats.failed} 件ありました`);
   return stats.failed > 0 ? 1 : 0;
 }
 
-main().then(
-  (code) => {
-    process.exitCode = code;
-  },
-  (e: unknown) => {
-    console.error('通知の処理が異常終了しました:', e);
-    process.exitCode = 1;
-  },
-);
+/** 終わった後も接続などが残ってプロセスが終わらないときに、強制的に終了するまでの時間 */
+const EXIT_GRACE_MS = 5_000;
+
+function finish(code: number): void {
+  process.exitCode = code;
+  // 通常はこのまま終わる。打ち切った送信の接続などが残っていても、ジョブを止めたままにしない
+  setTimeout(() => process.exit(code), EXIT_GRACE_MS).unref();
+}
+
+main().then(finish, (e: unknown) => {
+  console.error('通知の処理が異常終了しました:', e);
+  finish(1);
+});

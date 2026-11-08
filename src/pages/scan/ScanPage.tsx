@@ -142,7 +142,7 @@ export default function ScanPage() {
           <ul className={styles.thumbs} aria-label="読み取った本（タップでリストから外せます）">
             {thumbs.map((item) => {
               const title = itemTitle(item);
-              const unresolved = item.status === 'not-found' && !isItemResolved(item);
+              const unresolved = (item.status === 'not-found' || item.status === 'error') && !isItemResolved(item);
               return (
                 <li key={item.key} className={styles.thumbItem}>
                   <button

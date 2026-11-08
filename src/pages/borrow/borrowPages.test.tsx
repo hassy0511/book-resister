@@ -22,6 +22,8 @@ const state = vi.hoisted(() => ({
 const api = vi.hoisted(() => ({
   lookupByIsbn: vi.fn(),
   searchByTitle: vi.fn(),
+  /** true なら、見つからなかったときに通信の失敗（failed）として返す */
+  lookupFailed: false,
   getBook: vi.fn(),
   findBookForCandidate: vi.fn(),
   upsertBookFromCandidate: vi.fn(),
@@ -79,6 +81,14 @@ vi.mock('../../data/series', () => ({
 vi.mock('../../lib/bookLookup', () => ({
   lookupByIsbn: api.lookupByIsbn,
   searchByTitle: api.searchByTitle,
+  lookupByIsbnDetailed: async (isbn: string, opts?: unknown) => {
+    const candidate = (await api.lookupByIsbn(isbn, opts)) as BookCandidate | null;
+    return { candidate, failed: candidate === null && api.lookupFailed };
+  },
+  searchByTitleDetailed: async (q: string, opts?: unknown) => {
+    const candidates = (await api.searchByTitle(q, opts)) as BookCandidate[];
+    return { candidates, failed: candidates.length === 0 && api.lookupFailed };
+  },
 }));
 vi.mock('../home/useToday', () => ({ useToday: () => '2026-11-08' }));
 // カメラの代わりに「読み取り」ボタンを出す
@@ -215,6 +225,7 @@ beforeEach(() => {
   state.members = [member('u1', 'ママ'), member('u2', 'はなこ')];
   api.lookupByIsbn.mockReset().mockResolvedValue(null);
   api.searchByTitle.mockReset().mockResolvedValue([]);
+  api.lookupFailed = false;
   api.getBook.mockReset().mockResolvedValue(null);
   api.findBookForCandidate.mockReset().mockResolvedValue(null);
   api.upsertBookFromCandidate.mockReset().mockImplementation(async (_gid: string, c: BookCandidate) =>
@@ -247,6 +258,23 @@ describe('ScanPage（借りる）', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '次へ（1冊）' }));
     expect(screen.getByTestId('url').textContent).toBe('/borrow/confirm');
+  });
+
+  it('通信の失敗で取れなかった本は通知で知らせ、もう一度読み取ると取り直す', async () => {
+    api.lookupFailed = true;
+    renderAt('/scan');
+    fireEvent.click(screen.getByText('読み取り1'));
+    await flush();
+    expect(screen.getByText(/検索サービスにつながりませんでした/)).toBeTruthy();
+    expect(cart.items[0].status).toBe('error');
+
+    api.lookupByIsbn.mockResolvedValue(cand());
+    fireEvent.click(screen.getByText('読み取り1'));
+    expect(screen.getByText('すでに追加済みです（本の情報を取り直しています…）')).toBeTruthy();
+    await flush();
+    expect(cart.items).toHaveLength(1);
+    expect(cart.items[0].status).toBe('ready');
+    expect(api.lookupByIsbn).toHaveBeenCalledTimes(2);
   });
 
   it('サムネイルをタップするとリストから外せる', async () => {
@@ -304,7 +332,7 @@ describe('ScanPage（確認）', () => {
     expect(within(dialog).queryByText('本の情報を取得しています…')).toBeNull();
   });
 
-  it('書誌の取得は 10 秒で打ち切り、見つからない扱いにする', async () => {
+  it('書誌の取得は 10 秒で打ち切り、確かめられなかった扱い（つながりませんでした・再取得）にする', async () => {
     api.lookupByIsbn.mockImplementation(
       (_isbn: string, opts: { signal?: AbortSignal }) =>
         new Promise<BookCandidate | null>((resolve) => {
@@ -327,11 +355,36 @@ describe('ScanPage（確認）', () => {
       await act(async () => {
         vi.advanceTimersByTime(1);
       });
-      expect(within(dialog).getByText('本の情報が見つかりませんでした')).toBeTruthy();
+      expect(within(dialog).getByText('検索サービスにつながりませんでした')).toBeTruthy();
       expect(within(dialog).getByText(/タイトルを入力して登録できます/)).toBeTruthy();
+      // 再取得すると取り直す
+      api.lookupByIsbn.mockResolvedValue(cand({ isbn: ISBN2, title: 'からすのパンやさん' }));
+      fireEvent.click(within(dialog).getByRole('button', { name: '本の情報を再取得' }));
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      expect(within(dialog).getByText('からすのパンやさん')).toBeTruthy();
+      expect(api.lookupByIsbn).toHaveBeenCalledTimes(2);
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('書誌がどこにも無ければ「見つかりませんでした」、通信の失敗なら「つながりませんでした」', async () => {
+    renderAt('/scan?mode=check');
+    fireEvent.click(screen.getByText('読み取り2'));
+    await flush();
+    expect(within(screen.getByRole('dialog')).getByText('本の情報が見つかりませんでした')).toBeTruthy();
+    cleanup();
+
+    api.lookupFailed = true;
+    renderAt('/scan?mode=check');
+    fireEvent.click(screen.getByText('読み取り2'));
+    await flush();
+    const dialog = screen.getByRole('dialog');
+    expect(within(dialog).getByText('検索サービスにつながりませんでした')).toBeTruthy();
+    expect(within(dialog).getByRole('button', { name: '本の情報を再取得' })).toBeTruthy();
   });
 
   it('書誌のタイトルが ISBN なしで登録した本と同じなら、その本の履歴と詳細へのリンクを出す（同じ本とは決めつけない）', async () => {
@@ -412,6 +465,18 @@ describe('AddBookPage', () => {
     expect(cart.items).toHaveLength(1);
     fireEvent.click(screen.getByRole('button', { name: '借りる内容の確認へ（1冊）' }));
     expect(screen.getByTestId('url').textContent).toBe('/borrow/confirm');
+  });
+
+  it('検索サービスとの通信に失敗したら「見つかりませんでした」ではなく「つながりませんでした」', async () => {
+    api.lookupFailed = true;
+    renderAt('/borrow/add');
+    fireEvent.change(screen.getByLabelText('タイトル'), { target: { value: 'ぐりとぐら' } });
+    fireEvent.click(screen.getByRole('button', { name: '検索する' }));
+    await flush();
+    expect(screen.getByText('検索サービスにつながりませんでした')).toBeTruthy();
+    expect(screen.getByText(/電波のよい場所でもう一度検索するか、手入力で追加してください/)).toBeTruthy();
+    expect(screen.queryByText(/ひらがな・カタカナを変えたり/)).toBeNull();
+    expect(screen.getByRole('button', { name: '手入力で追加する' })).toBeTruthy();
   });
 
   it('以前に登録した本をタイトルの部分一致で出す', () => {
@@ -609,6 +674,46 @@ describe('BorrowConfirmPage', () => {
       title: 'こどものとも 11月号',
       source: 'manual',
     });
+  });
+
+  it('通信の失敗で取れなかった本は「つながりませんでした」と再取得・手入力を出す', async () => {
+    api.lookupFailed = true;
+    renderAt('/borrow/confirm');
+    act(() => {
+      cart.addIsbn(ISBN2);
+    });
+    await flush();
+    expect(screen.getByText('検索サービスにつながりませんでした')).toBeTruthy();
+    expect(screen.getByText(/電波のよい場所で再取得するか、手入力してください/)).toBeTruthy();
+    expect(screen.getByLabelText(/^タイトル必須/)).toBeTruthy();
+    expect(cart.items[0].status).toBe('error');
+
+    api.lookupByIsbn.mockResolvedValue(cand({ isbn: ISBN2, title: 'からすのパンやさん' }));
+    fireEvent.click(screen.getByRole('button', { name: '本の情報を再取得' }));
+    await flush();
+    expect(api.lookupByIsbn).toHaveBeenCalledTimes(2);
+    expect(screen.getByText('からすのパンやさん')).toBeTruthy();
+    expect(cart.items[0].status).toBe('ready');
+  });
+
+  it('上下 2 冊組の「下」は 2 巻、「中」もいっしょなら 3 巻で登録する', async () => {
+    renderAt('/borrow/confirm');
+    act(() => {
+      cart.addCandidate(cand({ isbn: null, title: '西の魔女が死んだ 上', seriesName: '西の魔女が死んだ', volume: 1, source: 'manual' }));
+      cart.addCandidate(cand({ isbn: null, title: '西の魔女が死んだ 下', seriesName: '西の魔女が死んだ', volume: 2, source: 'manual' }));
+      cart.addCandidate(cand({ isbn: null, title: 'みっつのくに 中', seriesName: 'みっつのくに', volume: 2, source: 'manual' }));
+      cart.addCandidate(cand({ isbn: null, title: 'みっつのくに 下', seriesName: 'みっつのくに', volume: 2, source: 'manual' }));
+    });
+    await flush();
+    fireEvent.click(screen.getByRole('button', { name: '4冊を登録する' }));
+    await flush();
+    const saved = api.upsertBookFromCandidate.mock.calls.map((c) => [(c[1] as BookCandidate).title, (c[2] as { volume: number }).volume]);
+    expect(saved).toEqual([
+      ['西の魔女が死んだ 上', 1],
+      ['西の魔女が死んだ 下', 2],
+      ['みっつのくに 中', 2],
+      ['みっつのくに 下', 3],
+    ]);
   });
 
   it('貸出中・前に借りたことがある本を知らせる', async () => {

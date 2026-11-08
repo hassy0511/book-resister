@@ -15,10 +15,24 @@ const book = (patch: Partial<BookCandidate> = {}): BookCandidate => ({
 });
 
 describe('missingFields', () => {
-  it('欠けている項目（シリーズは対象外）', () => {
-    expect(missingFields(book())).toEqual(['authors', 'publisher', 'coverUrl']);
-    expect(missingFields(book({ title: ' ', authors: ['a'], publisher: 'p', coverUrl: 'https://x' }))).toEqual(['title']);
-    expect(missingFields(book({ authors: ['a'], publisher: 'p', coverUrl: 'https://x' }))).toEqual([]);
+  const full = { authors: ['a'], publisher: 'p', coverUrl: 'https://x' };
+
+  it('欠けている項目（シリーズ名か巻数が定まらなければ series）', () => {
+    expect(missingFields(book())).toEqual(['authors', 'publisher', 'coverUrl', 'series']);
+    expect(missingFields(book({ title: ' ', ...full }))).toEqual(['title', 'series']);
+    expect(missingFields(book({ ...full }))).toEqual(['series']);
+    expect(missingFields(book({ ...full, seriesName: 'ぐりとぐら', volume: 1 }))).toEqual([]);
+  });
+
+  it('シリーズ・巻数はタイトルからの推定（finalizeCandidate）も含めて判断する', () => {
+    expect(missingFields(book({ ...full, title: 'おしりたんてい (3)' }))).toEqual([]);
+    expect(missingFields(book({ ...full, title: 'ONE PIECE 104' }))).toEqual([]);
+    // API のシリーズ名があっても巻数が無ければ欠けている
+    expect(missingFields(book({ ...full, title: 'かいけつゾロリのドラゴンたいじ', seriesName: 'かいけつゾロリシリーズ' }))).toEqual([
+      'series',
+    ]);
+    // API のシリーズ名と同じシリーズの巻表記がタイトルにあれば欠けていない
+    expect(missingFields(book({ ...full, title: 'かいけつゾロリ 3', seriesName: 'かいけつゾロリ' }))).toEqual([]);
   });
 });
 

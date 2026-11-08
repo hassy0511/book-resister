@@ -284,7 +284,7 @@ describe('SeriesDetailPage', () => {
     const dialog = screen.getByRole('dialog', { name: 'シリーズを編集' });
     expect(within(dialog).getByText(/同じ名前のシリーズ「おしりたんてい」がほかにもあります/)).toBeTruthy();
     act(() => {
-      fireEvent.click(within(dialog).getByRole('button', { name: 'このシリーズを「おしりたんてい」にまとめる' }));
+      fireEvent.click(within(dialog).getByRole('button', { name: '「おしりたんてい」にまとめる' }));
     });
     const confirm = screen.getByRole('dialog', { name: '「おしりたんてい」にまとめますか？' });
     expect(within(confirm).getByText(/本 6冊を「おしりたんてい」に移し/)).toBeTruthy();

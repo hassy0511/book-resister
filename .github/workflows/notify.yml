@@ -1,9 +1,13 @@
 # 返却日の通知（F-100〜F-104）
-# 毎朝、全グループの貸出中の本を調べて、延滞・明日返却・3日後に返却の本があれば Web Push を送る。
+# 毎朝、家族のグループ（NOTIFY_GROUP_IDS）の貸出中の本を調べて、延滞・明日返却・3日後に返却の本があれば Web Push を送る。
 #
-# 必要な設定（Settings > Secrets and variables > Actions）:
-#   Secrets:   FIREBASE_SERVICE_ACCOUNT（サービスアカウントの JSON をそのまま）, VAPID_PRIVATE_KEY
-#   Variables: VAPID_PUBLIC_KEY（アプリの VITE_VAPID_PUBLIC_KEY と同じ値）, VAPID_SUBJECT（mailto:〜 か https://〜）, APP_URL
+# 必要な設定（Settings > Secrets and variables > Actions。docs/setup.md 手順 6・7）:
+#   Secrets:   NOTIFY_SERVICE_ACCOUNT（通知専用のサービスアカウント notify-bot の JSON をそのまま。
+#                Cloud Datastore ユーザーのロールだけを持つ。デプロイ用の FIREBASE_SERVICE_ACCOUNT は渡さない）,
+#              VAPID_PRIVATE_KEY
+#   Variables: NOTIFY_GROUP_IDS（通知するグループの ID。カンマ区切り。未設定なら全グループ＝家族以外のグループにも送る）,
+#              VAPID_PUBLIC_KEY（アプリの VITE_VAPID_PUBLIC_KEY と同じ値）, VAPID_SUBJECT（mailto:〜 か https://〜）, APP_URL
+# NOTIFY_SERVICE_ACCOUNT が未登録のときは、デプロイ用の鍵には切り替えず、エラーで止める。
 name: 返却日の通知
 
 on:
@@ -42,7 +46,9 @@ jobs:
 
       - name: 通知を送信
         env:
-          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          # スクリプトが読む環境変数の名前は FIREBASE_SERVICE_ACCOUNT のまま（中身は通知専用の鍵）
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.NOTIFY_SERVICE_ACCOUNT }}
+          NOTIFY_GROUP_IDS: ${{ vars.NOTIFY_GROUP_IDS }}
           VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
           VAPID_PUBLIC_KEY: ${{ vars.VAPID_PUBLIC_KEY }}
           VAPID_SUBJECT: ${{ vars.VAPID_SUBJECT }}
@@ -50,6 +56,10 @@ jobs:
           # 定期実行では inputs が空なので false になる
           DRY_RUN: ${{ inputs.dry_run && 'true' || 'false' }}
         run: |
+          if [ -z "$FIREBASE_SERVICE_ACCOUNT" ]; then
+            echo "::error::Secrets の NOTIFY_SERVICE_ACCOUNT が未登録です。docs/setup.md 手順 6-3 の通知専用の鍵（notify-bot）を作って登録してください（デプロイ用の鍵は使いません）。"
+            exit 1
+          fi
           if [ "$DRY_RUN" = "true" ]; then
             npx tsx scripts/notify/index.ts --dry-run
           else

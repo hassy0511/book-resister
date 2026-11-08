@@ -6,11 +6,13 @@ import zororiXml from './__fixtures__/ndl-isbn-zorori.xml?raw';
 import guriXml from './__fixtures__/ndl-title-guri.xml?raw';
 import {
   fetchNdlByIsbn,
+  fetchNdlByIsbnDetailed,
   ndlIsbnUrl,
   ndlTitleUrl,
   parseNdlOpenSearch,
   pickNdlByIsbn,
   searchNdlByTitle,
+  searchNdlByTitleDetailed,
 } from './ndl';
 
 afterEach(() => {
@@ -18,10 +20,10 @@ afterEach(() => {
 });
 
 describe('URL', () => {
-  it('ISBN 検索・タイトル検索（20 件）', () => {
+  it('ISBN 検索・タイトル検索（記事・雑誌などを除く分も見込んで 50 件）', () => {
     expect(ndlIsbnUrl('9784834000825')).toBe('https://ndlsearch.ndl.go.jp/api/opensearch?isbn=9784834000825');
     expect(ndlTitleUrl('ぐりとぐら')).toBe(
-      'https://ndlsearch.ndl.go.jp/api/opensearch?title=%E3%81%90%E3%82%8A%E3%81%A8%E3%81%90%E3%82%89&cnt=20',
+      'https://ndlsearch.ndl.go.jp/api/opensearch?title=%E3%81%90%E3%82%8A%E3%81%A8%E3%81%90%E3%82%89&cnt=50',
     );
   });
 });
@@ -169,4 +171,38 @@ describe('fetchNdlByIsbn / searchNdlByTitle', () => {
     await expect(searchNdlByTitle('   ')).resolves.toEqual([]);
     expect(fetchMock).not.toHaveBeenCalled();
   });
+
+  it('Detailed: 該当なしと通信の失敗を区別する（呼び出し側の中断は失敗にしない）', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(emptyXml, { status: 200 })));
+    await expect(fetchNdlByIsbnDetailed('9784591025093')).resolves.toEqual({ value: null, failed: false });
+    await expect(searchNdlByTitleDetailed('ぐりとぐら')).resolves.toEqual({ value: [], failed: false });
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('', { status: 503 })));
+    await expect(fetchNdlByIsbnDetailed('9784591025093')).resolves.toEqual({ value: null, failed: true });
+    await expect(searchNdlByTitleDetailed('ぐりとぐら')).resolves.toEqual({ value: [], failed: true });
+    const ctrl = new AbortController();
+    ctrl.abort();
+    await expect(fetchNdlByIsbnDetailed('9784591025093', { signal: ctrl.signal })).resolves.toEqual({
+      value: null,
+      failed: false,
+    });
+  });
+
+  it('タイトル検索は記事・雑誌を除いた後も本が残るよう多めに取る', () => {
+    // 50 件のうち 40 件が記事でも、本の 10 件は残る
+    const item = (i: number, book: boolean) =>
+      book
+        ? `<item><title>ぐりとぐら ${i}</title><category>図書</category><dc:title>ぐりとぐら ${i}</dc:title><dc:identifier xsi:type="dcndl:ISBN">${isbnFor(i)}</dc:identifier></item>`
+        : `<item><title>「ぐりとぐら」の話 ${i}</title><category>記事</category><dc:title>「ぐりとぐら」の話 ${i}</dc:title></item>`;
+    const items = Array.from({ length: 50 }, (_, i) => item(i, i % 5 === 0)).join('');
+    const xml = `<?xml version="1.0"?><rss xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcndl="http://ndl.go.jp/dcndl/terms/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" version="2.0"><channel>${items}</channel></rss>`;
+    expect(parseNdlOpenSearch(xml)).toHaveLength(10);
+  });
 });
+
+/** テスト用に、i ごとに違う正しい ISBN-13 を作る */
+function isbnFor(i: number): string {
+  const first12 = `978483400${String(i).padStart(3, '0')}`;
+  let sum = 0;
+  for (let k = 0; k < 12; k++) sum += Number(first12[k]) * (k % 2 === 0 ? 1 : 3);
+  return `${first12}${(10 - (sum % 10)) % 10}`;
+}

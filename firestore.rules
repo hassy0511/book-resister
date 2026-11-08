@@ -73,9 +73,12 @@ service cloud.firestore {
     }
 
     // 文字列のリスト（空文字なし、最大 maxItems 件、連結して maxTotal 文字以内）。
-    // ルールにはループが無いため、要素の型は先頭 10 件だけ個別に確認する
+    // ルールにはループが無いため、要素は 0〜9 番目を 1 つずつ確認する。そのため maxItems は 10 以下で使うこと
+    // （join は数値・null・真偽値も文字列にして通すので、11 件目以降の型は確かめられない。
+    //   strAt を増やすと式の評価数の上限 1000 に届き、正しいデータまで拒否される）
     function isStrList(v, maxItems, maxTotal) {
       return v is list
+        && maxItems <= 10
         && v.size() <= maxItems
         && (v.size() == 0 || (!v.hasAny(['']) && v.join('\n').size() <= maxTotal))
         && strAt(v, 0) && strAt(v, 1) && strAt(v, 2) && strAt(v, 3) && strAt(v, 4)
@@ -94,6 +97,16 @@ service cloud.firestore {
 
     function isInviteCode(v) {
       return v is string && v.matches('^[A-Za-z0-9_-]{16,64}$');
+    }
+
+    function groupPath(gid) {
+      return /databases/$(database)/documents/groups/$(gid);
+    }
+
+    // グループの招待がすべて無効になった時刻（未設定なら 1970 年 = すべて有効）。
+    // これより前に作られた招待では参加できない（「これまでの招待リンクをすべて無効にする」、メンバーを外すとき）
+    function invitesValidAfter(groupData) {
+      return groupData.get('invitesValidAfter', timestamp.value(0));
     }
 
     // ------------------------------------------------------------------
@@ -160,9 +173,12 @@ service cloud.firestore {
         && incoming().createdBy == request.auth.uid
         && incoming().createdAt == request.time
         && existsAfter(memberPath(gid, request.auth.uid));
+      // 名前の変更と、招待の一括無効化（invitesValidAfter を今の時刻にする。他の値・削除は不可）
       allow update: if isMember(gid)
-        && incoming().diff(existing()).affectedKeys().hasOnly(['name'])
-        && isText(incoming().name, 1, 50);
+        && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'invitesValidAfter'])
+        && isText(incoming().name, 1, 50)
+        && (!incoming().diff(existing()).affectedKeys().hasAny(['invitesValidAfter'])
+          || incoming().invitesValidAfter == request.time);
       allow delete: if false;
 
       // ---- members/{uid} ----
@@ -181,10 +197,12 @@ service cloud.firestore {
 
         function inviteValidForGroup(code) {
           let invite = get(/databases/$(database)/documents/invites/$(code)).data;
-          return invite.groupId == gid && invite.expiresAt > request.time;
+          return invite.groupId == gid
+            && invite.expiresAt > request.time
+            && invite.createdAt > invitesValidAfter(get(groupPath(gid)).data);
         }
 
-        // 有効期限内の、このグループの招待コードを持っている
+        // 有効期限内の、このグループの招待コードを持っている（一括無効化より後に作られたもの）
         function joinsWithInvite() {
           return isInviteCode(incoming().inviteCode)
             && exists(/databases/$(database)/documents/invites/$(incoming().inviteCode))
@@ -204,7 +222,11 @@ service cloud.firestore {
               && isText(incoming().displayName, 1, 50))
             || (memberFields(incoming()) && (joinsAsCreator() || joinsWithInvite()))
           );
-        allow delete: if isSelf(memberUid);
+        // 本人が抜ける。または、メンバーが他のメンバーを外す（F-07。権限の差は設けない＝F-05）。
+        // 他の人を外すときは、外した人が手元の招待リンクで戻れないよう、
+        // 同じ書き込みで招待をすべて無効にする（groups の invitesValidAfter を今の時刻にする）
+        allow delete: if isSelf(memberUid)
+          || (isMember(gid) && invitesValidAfter(getAfter(groupPath(gid)).data) == request.time);
       }
 
       // ---- locations/{id} ----
@@ -228,7 +250,7 @@ service cloud.firestore {
           return hasExactly(d, ['isbn', 'title', 'authors', 'publisher', 'coverUrl', 'seriesId', 'volume', 'source', 'createdAt', 'updatedAt'])
             && (d.isbn == null || isIsbn13(d.isbn))
             && isText(d.title, 1, 300)
-            && isStrList(d.authors, 50, 2000)
+            && isStrList(d.authors, 10, 2000)
             && (d.publisher == null || isText(d.publisher, 1, 200))
             && (d.coverUrl == null || isUrl(d.coverUrl))
             && (d.seriesId == null || isDocId(d.seriesId))
@@ -266,7 +288,7 @@ service cloud.firestore {
           return b is map
             && hasExactly(b, ['title', 'authors', 'coverUrl', 'isbn'])
             && isText(b.title, 1, 300)
-            && isStrList(b.authors, 50, 2000)
+            && isStrList(b.authors, 10, 2000)
             && (b.coverUrl == null || isUrl(b.coverUrl))
             && (b.isbn == null || isIsbn13(b.isbn));
         }
@@ -303,11 +325,15 @@ service cloud.firestore {
         function pushFields(d) {
           return hasExactly(d, ['uid', 'endpoint', 'keys', 'userAgent', 'createdAt'])
             && d.uid == request.auth.uid
-            && d.endpoint is string && d.endpoint.size() <= 2048 && d.endpoint.matches('^https://.+')
+            // 送信先は主要なブラウザのプッシュサービスだけ（Safari・Chrome・Firefox・Edge）。
+            // 毎朝の通知スクリプトが第三者のサーバーへ送らないため。scripts/notify/subscription.ts と同じ条件
+            && d.endpoint is string && d.endpoint.size() <= 2048
+            && d.endpoint.matches('^https://(web[.]push[.]apple[.]com|fcm[.]googleapis[.]com|updates[.]push[.]services[.]mozilla[.]com|[a-z0-9-]+[.]notify[.]windows[.]com)/.+')
             && d['keys'] is map
             && hasExactly(d['keys'], ['p256dh', 'auth'])
-            && isText(d['keys'].p256dh, 1, 512)
-            && isText(d['keys'].auth, 1, 512)
+            // p256dh は 65 バイト、auth は 16 バイトの base64url（形式が違うと送信のたびに暗号化で失敗する）
+            && d['keys'].p256dh is string && d['keys'].p256dh.matches('^[A-Za-z0-9_-]{87}=?$')
+            && d['keys'].auth is string && d['keys'].auth.matches('^[A-Za-z0-9_-]{22}(==)?$')
             && d.userAgent is string && d.userAgent.size() <= 1000;
         }
 

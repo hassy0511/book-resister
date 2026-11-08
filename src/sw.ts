@@ -13,7 +13,8 @@ import { NavigationRoute, registerRoute } from 'workbox-routing';
 
 declare const self: ServiceWorkerGlobalScope & { __WB_MANIFEST: Array<PrecacheEntry | string> };
 
-// registerType: 'autoUpdate' のため、新しい SW はすぐに有効にして開いている画面も制御下に置く
+// registerType: 'autoUpdate' のため、新しい SW はすぐに有効にして開いている画面も制御下に置く。
+// 開いている画面の再読み込みは、入力中の内容を消さないよう次に画面を移るときに行う（src/swUpdate.ts）
 self.skipWaiting();
 clientsClaim();
 
@@ -44,6 +45,7 @@ interface PushPayload {
 
 const DEFAULT_TITLE = '返却日のお知らせ';
 const DEFAULT_BODY = 'アプリを開いて返却日を確認してください。';
+/** 本文の長さの上限。scripts/notify/messages.ts の MAX_BODY_LENGTH（送る側で切る長さ）と同じ値にすること */
 const MAX_BODY_LENGTH = 500;
 
 function scopeUrl(path: string): string {

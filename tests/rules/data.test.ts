@@ -208,21 +208,31 @@ describe('books', () => {
     await assertSucceeds(make('あ'.repeat(300)));
   });
 
-  it('著者は文字列のリスト（50 件まで、空文字なし、1 人 200 文字まで）', async () => {
+  it('著者は文字列のリスト（10 件まで、空文字なし、1 人 200 文字まで）', async () => {
     let n = 0;
     const make = (authors: unknown) =>
       setDoc(doc(as('bob'), 'groups/g1/books', `m${++n}`), newBook({ isbn: null, authors }));
+    const names = (count: number) => Array.from({ length: count }, (_, i) => `著者${i}`);
     await assertFails(make('なかがわりえこ'));
     await assertFails(make(['なかがわりえこ', 1]));
     await assertFails(make(['なかがわりえこ', null]));
     await assertFails(make(['なかがわりえこ', { name: 'x' }]));
-    await assertFails(make([...Array.from({ length: 9 }, (_, i) => `著者${i}`), 10]));
     await assertFails(make(['']));
     await assertFails(make(['  ']));
     await assertFails(make(['あ'.repeat(201)]));
-    await assertFails(make(Array.from({ length: 51 }, (_, i) => `著者${i}`)));
-    await assertFails(make(Array.from({ length: 20 }, () => 'あ'.repeat(150))));
-    await assertSucceeds(make(Array.from({ length: 50 }, (_, i) => `著者${i}`)));
+    // 10 件目（最後に確かめる要素）も型・長さを確かめる
+    for (const last of [10, 1.5, null, true, '   ', 'あ'.repeat(201)]) {
+      await assertFails(make([...names(9), last]));
+    }
+    // 11 件以上は不可（11 件目以降は要素の型を確かめられないため、件数で止める）
+    await assertFails(make(names(11)));
+    await assertFails(make([...names(10), 5]));
+    await assertFails(make([...names(10), null]));
+    // 合計 2000 文字まで（区切りの改行を含む）
+    await assertFails(make(Array.from({ length: 10 }, () => 'あ'.repeat(200))));
+    // 10 件ちょうど（式の評価数の上限に当たらないことも確かめる）
+    await assertSucceeds(make(names(10)));
+    await assertSucceeds(make(Array.from({ length: 10 }, () => 'あ'.repeat(199))));
     await assertSucceeds(make([]));
   });
 
@@ -366,6 +376,18 @@ describe('loans', () => {
     await assertFails(make(loanBookSnapshot({ coverUrl: 'data:image/png;base64,xx' })));
     await assertFails(make('ぐりとぐら'));
     await assertSucceeds(make(loanBookSnapshot({ isbn: null, authors: [], coverUrl: 'https://example.com/c.jpg' })));
+  });
+
+  it('スナップショットの著者も 10 件まで・すべて文字列', async () => {
+    const names = (count: number) => Array.from({ length: count }, (_, i) => `著者${i}`);
+    let n = 0;
+    const make = (authors: unknown) =>
+      setDoc(loanRef(as('bob'), `snap${++n}`), newLoan('bob', { book: loanBookSnapshot({ authors }) }));
+    await assertSucceeds(make(names(10)));
+    await assertFails(make(names(11)));
+    await assertFails(make([...names(10), null]));
+    await assertFails(make([...names(9), 5]));
+    await assertFails(make([...names(9), 'あ'.repeat(201)]));
   });
 
   it('ID 系のフィールドは空でない文字列', async () => {

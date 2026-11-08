@@ -21,6 +21,8 @@ const mocks = vi.hoisted(() => ({
   addLocation: vi.fn<(gid: string, input: unknown) => Promise<string>>(),
   updateLocation: vi.fn<(gid: string, id: string, patch: unknown) => Promise<void>>(),
   createInvite: vi.fn<(gid: string, name: string, uid: string) => Promise<{ code: string; url: string }>>(),
+  removeMember: vi.fn<(gid: string, memberUid: string, selfUid: string) => Promise<void>>(),
+  revokeInvites: vi.fn<(gid: string) => Promise<void>>(),
   enablePush: vi.fn<(gid: string, uid: string) => Promise<void>>(),
   disablePush: vi.fn<(gid: string) => Promise<void>>(),
   showTestNotification: vi.fn<() => Promise<void>>(),
@@ -61,6 +63,7 @@ vi.mock('../../data/locations', () => ({
 }));
 vi.mock('../../data/loans', () => ({ useActiveLoans: () => mocks.loans }));
 vi.mock('../../data/invites', () => ({ INVITE_VALID_DAYS: 7, createInvite: mocks.createInvite }));
+vi.mock('../../data/members', () => ({ removeMember: mocks.removeMember, revokeInvites: mocks.revokeInvites }));
 vi.mock('../../lib/push', () => ({
   getPushState: mocks.getPushState,
   enablePush: mocks.enablePush,
@@ -127,6 +130,8 @@ beforeEach(() => {
     mocks.addLocation,
     mocks.updateLocation,
     mocks.createInvite,
+    mocks.removeMember,
+    mocks.revokeInvites,
     mocks.enablePush,
     mocks.disablePush,
     mocks.showTestNotification,
@@ -398,6 +403,58 @@ describe('MembersPage', () => {
     fireEvent.click(screen.getByRole('button', { name: '招待リンクを作る' }));
     expect(await screen.findByText('通信できないため招待リンクを作れませんでした。')).toBeTruthy();
     expect(screen.queryByLabelText(/招待リンク（/)).toBeNull();
+  });
+
+  it('他のメンバーには「外す」があり、自分には無い', () => {
+    renderAt('/settings/members');
+    expect(screen.getByRole('button', { name: 'パパさんをグループから外す' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'ママさんをグループから外す' })).toBeNull();
+  });
+
+  it('確認してからメンバーを外す（招待も無効になると伝える）', async () => {
+    mocks.removeMember.mockResolvedValue();
+    renderAt('/settings/members');
+    fireEvent.click(screen.getByRole('button', { name: 'パパさんをグループから外す' }));
+    expect(screen.getByText('パパさんをグループから外しますか？')).toBeTruthy();
+    expect(screen.getByText(/これまでの招待リンクもすべて無効になります/)).toBeTruthy();
+    expect(mocks.removeMember).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: '外す' }));
+    await waitFor(() => expect(mocks.removeMember).toHaveBeenCalledWith('g1', 'u2', 'u1'));
+    expect(await screen.findByText(/パパさんをグループから外しました/)).toBeTruthy();
+  });
+
+  it('キャンセルすれば外さない', () => {
+    renderAt('/settings/members');
+    fireEvent.click(screen.getByRole('button', { name: 'パパさんをグループから外す' }));
+    fireEvent.click(screen.getByRole('button', { name: 'キャンセル' }));
+    expect(mocks.removeMember).not.toHaveBeenCalled();
+  });
+
+  it('外せなければエラーを出してダイアログを開いたままにする', async () => {
+    mocks.removeMember.mockRejectedValue(new Error('通信できないため、まだ反映されていません。'));
+    renderAt('/settings/members');
+    fireEvent.click(screen.getByRole('button', { name: 'パパさんをグループから外す' }));
+    fireEvent.click(screen.getByRole('button', { name: '外す' }));
+    expect(await screen.findByText('通信できないため、まだ反映されていません。')).toBeTruthy();
+    expect(screen.getByText('パパさんをグループから外しますか？')).toBeTruthy();
+  });
+
+  it('確認してから、これまでの招待リンクをすべて無効にする。表示中のリンクも消す', async () => {
+    mocks.createInvite.mockResolvedValue({ code: 'x', url: 'https://example.web.app/join/x' });
+    mocks.revokeInvites.mockResolvedValue();
+    setNavigator('share', undefined);
+    setNavigator('clipboard', { writeText: vi.fn<(text: string) => Promise<void>>().mockResolvedValue() });
+    renderAt('/settings/members');
+    fireEvent.click(screen.getByRole('button', { name: '招待リンクを作る' }));
+    await screen.findByLabelText(/招待リンク（/);
+
+    fireEvent.click(screen.getByRole('button', { name: /これまでの招待リンクをすべて無効にする/ }));
+    expect(screen.getByText('これまでの招待リンクをすべて無効にしますか？')).toBeTruthy();
+    expect(mocks.revokeInvites).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: '無効にする' }));
+    await waitFor(() => expect(mocks.revokeInvites).toHaveBeenCalledWith('g1'));
+    expect(await screen.findByText(/これまでの招待リンクを無効にしました/)).toBeTruthy();
+    await waitFor(() => expect(screen.queryByLabelText(/招待リンク（/)).toBeNull());
   });
 });
 

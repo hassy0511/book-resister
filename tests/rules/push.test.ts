@@ -75,6 +75,33 @@ describe('pushSubscriptions の作成・更新', () => {
     await assertFails(make({ groupId: 'g1' }));
   });
 
+  it('送信先は主要なブラウザのプッシュサービスだけ（第三者のサーバーは不可）', async () => {
+    const make = (endpoint: string) => setDoc(subRef(as('bob'), NEW_SUB), newPushSubscription('bob', { endpoint }));
+    await assertSucceeds(make('https://web.push.apple.com/QGxhYmVsLWZvci10ZXN0'));
+    await assertSucceeds(make('https://fcm.googleapis.com/fcm/send/abc:APA91b'));
+    await assertSucceeds(make('https://updates.push.services.mozilla.com/wpush/v2/gAAAAA'));
+    await assertSucceeds(make('https://wns2-par02p.notify.windows.com/w/?token=BQYAAAB'));
+    await assertFails(make('https://attacker.example/x'));
+    await assertFails(make('https://victim.example/api/anything?a=1'));
+    await assertFails(make('https://127.0.0.1:1/x'));
+    await assertFails(make('https://web.push.apple.com.attacker.example/x'));
+    await assertFails(make('https://webxpushxapplexcom/x'));
+    await assertFails(make('https://web.push.apple.com:8443/x'));
+    await assertFails(make('https://web.push.apple.com/'));
+  });
+
+  it('鍵の長さ・文字種が正しくなければ登録できない', async () => {
+    const valid = newPushSubscription('bob').keys as { p256dh: string; auth: string };
+    const make = (keys: Record<string, string>) =>
+      setDoc(subRef(as('bob'), NEW_SUB), newPushSubscription('bob', { keys }));
+    await assertSucceeds(make({ p256dh: `${valid.p256dh}=`, auth: `${valid.auth}==` }));
+    await assertFails(make({ p256dh: 'BPublicKeyForTest', auth: valid.auth }));
+    await assertFails(make({ p256dh: valid.p256dh.slice(1), auth: valid.auth }));
+    await assertFails(make({ p256dh: `${valid.p256dh.slice(1)}+`, auth: valid.auth }));
+    await assertFails(make({ p256dh: valid.p256dh, auth: 'AuthSecret' }));
+    await assertFails(make({ p256dh: valid.p256dh, auth: `${valid.auth}A` }));
+  });
+
   it('同じ端末での購読し直し（上書き）ができる', async () => {
     // createdAt を据え置き
     await assertSucceeds(setDoc(subRef(as('alice'), ALICE_SUB), { ...newPushSubscription('alice'), createdAt: PAST }));

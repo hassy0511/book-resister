@@ -83,6 +83,11 @@ describe('trimOrNull / cleanStringList', () => {
     expect(cleanStringList([' 作者A ', '', '作者B', '作者A', null, undefined])).toEqual(['作者A', '作者B']);
     expect(cleanStringList(undefined)).toEqual([]);
   });
+
+  it('保存済みのデータに文字列以外が混じっていても落ちずに取り除く', () => {
+    const stored = ['作者A', 5, true, { name: 'x' }, '作者B'] as unknown as string[];
+    expect(cleanStringList(stored)).toEqual(['作者A', '作者B']);
+  });
 });
 
 describe('isDateString', () => {
@@ -374,9 +379,11 @@ describe('clipText / clipAuthors / cleanCoverUrl（firestore.rules の上限に�
     expect(clipText('ab😀', 3)).toBe('ab');
   });
 
-  it('clipAuthors は 1 人 200 文字・50 人・合計 2000 文字に収める', () => {
+  it('clipAuthors は 1 人 200 文字・10 人・合計 2000 文字に収める', () => {
     const many = Array.from({ length: 60 }, (_, i) => `著者${i}`);
-    expect(clipAuthors(many)).toHaveLength(TEXT_LIMITS.authorsCount);
+    expect(TEXT_LIMITS.authorsCount).toBe(10);
+    expect(clipAuthors(many)).toHaveLength(10);
+    expect(clipAuthors(many).at(-1)).toBe('著者9');
     expect(clipAuthors(['あ'.repeat(250)])[0]).toHaveLength(TEXT_LIMITS.author);
     const long = Array.from({ length: 20 }, (_, i) => `${i}`.padEnd(150, 'x'));
     expect(clipAuthors(long).join('\n').length).toBeLessThanOrEqual(TEXT_LIMITS.authorsTotal);

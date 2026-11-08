@@ -8,6 +8,7 @@ import {
   type DocumentReference,
   type DocumentSnapshot,
   type Query,
+  type QuerySnapshot,
   type Unsubscribe,
 } from 'firebase/firestore';
 import type { DateString, WithId } from '../types';
@@ -177,14 +178,54 @@ export function docWithId<T>(snap: DocumentSnapshot): WithId<T> {
   return { ...data, id: snap.id };
 }
 
-/** クエリを購読して ID 付きの配列を返す購読関数 */
-export function querySubscriber<T>(q: Query): Subscriber<WithId<T>[]> {
-  return (next, fail) =>
-    onSnapshot(
+/**
+ * クエリを購読して ID 付きの配列を返す購読関数。
+ * opts.preferServerMs を指定すると、オンラインのときは最初のサーバーの結果をその時間まで待つ
+ * （端末のキャッシュには別の範囲で読んだ一部の記録しか無いことがあり、途中の件数を表示しないため）。
+ * 時間が過ぎたら・オフラインならキャッシュの結果を返し、サーバーの結果が届いたら差し替える。
+ */
+export function querySubscriber<T>(q: Query, opts: { preferServerMs?: number } = {}): Subscriber<WithId<T>[]> {
+  const wait = opts.preferServerMs;
+  const toList = (snap: QuerySnapshot) => snap.docs.map((d) => docWithId<T>(d));
+  if (wait === undefined) {
+    return (next, fail) => onSnapshot(q, (snap) => next(toList(snap)), fail);
+  }
+  return (next, fail) => {
+    // サーバーの結果が届いた、または待つのをやめた後は、届いた結果をそのまま返す
+    let released = false;
+    let pending: QuerySnapshot | null = null;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const stopTimer = () => {
+      if (timer !== undefined) clearTimeout(timer);
+      timer = undefined;
+    };
+    const unsubscribe = onSnapshot(
       q,
-      (snap) => next(snap.docs.map((d) => docWithId<T>(d))),
-      fail,
+      { includeMetadataChanges: true },
+      (snap) => {
+        if (released || !snap.metadata.fromCache || isOffline()) {
+          released = true;
+          stopTimer();
+          next(toList(snap));
+          return;
+        }
+        pending = snap;
+        timer ??= setTimeout(() => {
+          timer = undefined;
+          released = true;
+          if (pending) next(toList(pending));
+        }, wait);
+      },
+      (e) => {
+        stopTimer();
+        fail(e);
+      },
     );
+    return () => {
+      stopTimer();
+      unsubscribe();
+    };
+  };
 }
 
 /**
@@ -323,7 +364,8 @@ export const TEXT_LIMITS = {
   bookTitle: 300,
   publisher: 200,
   author: 200,
-  authorsCount: 50,
+  /** ルールは要素を 1 つずつ確かめるため 10 件まで（firestore.rules の isStrList） */
+  authorsCount: 10,
   authorsTotal: 2000,
   url: 2048,
   seriesName: 200,
@@ -370,7 +412,8 @@ export function cleanStringList(values: readonly (string | null | undefined)[] |
   if (!values) return [];
   const out: string[] = [];
   for (const v of values) {
-    const t = trimOrNull(v);
+    // 保存済みのデータに文字列以外が混じっていても落ちないようにする
+    const t = typeof v === 'string' ? trimOrNull(v) : null;
     if (t !== null && !out.includes(t)) out.push(t);
   }
   return out;

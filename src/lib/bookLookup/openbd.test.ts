@@ -3,7 +3,7 @@ import harryRaw from './__fixtures__/openbd-harry.json?raw';
 import notFoundRaw from './__fixtures__/openbd-notfound.json?raw';
 import onePieceRaw from './__fixtures__/openbd-onepiece.json?raw';
 import oshiriRaw from './__fixtures__/openbd-oshiri.json?raw';
-import { fetchOpenBdByIsbn, openBdUrl, parseOpenBdResponse, splitOpenBdAuthor } from './openbd';
+import { fetchOpenBdByIsbn, fetchOpenBdByIsbnDetailed, openBdUrl, parseOpenBdResponse, splitOpenBdAuthor } from './openbd';
 
 const json = (raw: string): unknown => JSON.parse(raw);
 
@@ -127,5 +127,16 @@ describe('fetchOpenBdByIsbn', () => {
     await expect(fetchOpenBdByIsbn('9784591153956')).resolves.toBeNull();
     vi.stubGlobal('fetch', vi.fn(async () => new Response('{broken', { status: 200 })));
     await expect(fetchOpenBdByIsbn('9784591153956')).resolves.toBeNull();
+  });
+
+  it('Detailed: 未登録（[null]）は failed: false、HTTP エラー・ネットワークエラー・壊れた JSON は failed: true', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('[null]', { status: 200 })));
+    await expect(fetchOpenBdByIsbnDetailed('9784591153956')).resolves.toEqual({ value: null, failed: false });
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('err', { status: 500 })));
+    await expect(fetchOpenBdByIsbnDetailed('9784591153956')).resolves.toEqual({ value: null, failed: true });
+    vi.stubGlobal('fetch', vi.fn(async () => Promise.reject(new TypeError('Failed to fetch'))));
+    await expect(fetchOpenBdByIsbnDetailed('9784591153956')).resolves.toEqual({ value: null, failed: true });
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('{broken', { status: 200 })));
+    await expect(fetchOpenBdByIsbnDetailed('9784591153956')).resolves.toEqual({ value: null, failed: true });
   });
 });

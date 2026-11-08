@@ -4,10 +4,12 @@ import onePieceRaw from './__fixtures__/google-isbn-onepiece.json?raw';
 import guriRaw from './__fixtures__/google-title-guri.json?raw';
 import {
   fetchGoogleByIsbn,
+  fetchGoogleByIsbnDetailed,
   googleIsbnUrl,
   googleTitleUrl,
   parseGoogleBooksResponse,
   searchGoogleByTitle,
+  searchGoogleByTitleDetailed,
 } from './google';
 
 const json = (raw: string): unknown => JSON.parse(raw);
@@ -113,6 +115,17 @@ describe('fetchGoogleByIsbn', () => {
     await expect(fetchGoogleByIsbn('9784088833132')).resolves.toBeNull();
     vi.stubGlobal('fetch', vi.fn(async () => Promise.reject(new TypeError('Failed to fetch'))));
     await expect(fetchGoogleByIsbn('9784088833132')).resolves.toBeNull();
+  });
+
+  it('Detailed: 0 件は failed: false、上限超過（429）・通信失敗は failed: true', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(emptyRaw, { status: 200 })));
+    await expect(fetchGoogleByIsbnDetailed('9784088833132')).resolves.toEqual({ value: null, failed: false });
+    await expect(searchGoogleByTitleDetailed('ぐりとぐら')).resolves.toEqual({ value: [], failed: false });
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('{"error":{}}', { status: 429 })));
+    await expect(fetchGoogleByIsbnDetailed('9784088833132')).resolves.toEqual({ value: null, failed: true });
+    await expect(searchGoogleByTitleDetailed('ぐりとぐら')).resolves.toEqual({ value: [], failed: true });
+    vi.stubGlobal('fetch', vi.fn(async () => Promise.reject(new TypeError('Failed to fetch'))));
+    await expect(fetchGoogleByIsbnDetailed('9784088833132')).resolves.toEqual({ value: null, failed: true });
   });
 });
 

@@ -6,8 +6,12 @@ import { guessSeries } from '../series';
 import type { BookCandidate } from '../../types';
 import { compareKey, isSameSeries, ndlThumbnailUrl, normalizeTitle } from './normalize';
 
-/** 後続の API で補う対象の項目（シリーズは対象外。無くてもタイトルから推定する） */
-export type LookupField = 'title' | 'authors' | 'publisher' | 'coverUrl';
+/**
+ * 後続の API で補う対象の項目。
+ * 'series' はシリーズ名か巻数が定まらないこと（API の値とタイトルからの推定 finalizeCandidate の結果で判断する。
+ * 「おしりたんてい (3)」のようにタイトルから分かる本は欠けていない）。
+ */
+export type LookupField = 'title' | 'authors' | 'publisher' | 'coverUrl' | 'series';
 
 /** 欠けている項目 */
 export function missingFields(c: BookCandidate): LookupField[] {
@@ -16,6 +20,8 @@ export function missingFields(c: BookCandidate): LookupField[] {
   if (c.authors.length === 0) out.push('authors');
   if (!c.publisher) out.push('publisher');
   if (!c.coverUrl) out.push('coverUrl');
+  const f = finalizeCandidate(c, { ndlThumbnail: false });
+  if (!f.seriesName || f.volume === null) out.push('series');
   return out;
 }
 

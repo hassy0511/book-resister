@@ -6,6 +6,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { registerSW } from 'virtual:pwa-register';
 import App from './App';
+import { createUpdateReloader } from './swUpdate';
 
 /** 新しいバージョンの確認間隔（ホーム画面から開いた PWA は再読み込みされにくいため定期的に確認） */
 const UPDATE_CHECK_INTERVAL_MS = 60 * 60 * 1000;
@@ -13,9 +14,12 @@ const UPDATE_CHECK_INTERVAL_MS = 60 * 60 * 1000;
 const UPDATE_CHECK_MIN_GAP_MS = 10 * 60 * 1000;
 
 if (import.meta.env.PROD) {
-  // registerType: 'autoUpdate' なので、新しい SW が有効になると自動で再読み込みされる
+  // registerType: 'autoUpdate' なので、新しい SW は見つかるとすぐ有効になる。
+  // 再読み込みは、読み込み直後ならすぐ、使っている途中なら次に画面を移るときに行う（入力中の内容を消さない。swUpdate.ts）
+  const reloader = createUpdateReloader(window);
   registerSW({
     immediate: true,
+    onNeedReload: reloader.onNeedReload,
     onRegisteredSW(_swUrl, registration) {
       if (!registration) return;
       let lastCheck = Date.now();

@@ -6,6 +6,7 @@ import {
   parseServiceAccount,
   readAppUrl,
   readFirebaseTarget,
+  readGroupAllowlist,
   readVapidConfig,
 } from './config';
 
@@ -110,5 +111,23 @@ describe('readAppUrl', () => {
     expect(() => readAppUrl({ APP_URL: 'book.example.web.app' })).toThrow(ConfigError);
     expect(() => readAppUrl({ APP_URL: '//evil.example.com' })).toThrow(ConfigError);
     expect(() => readAppUrl({ APP_URL: 'javascript:alert(1)' })).toThrow(ConfigError);
+  });
+});
+
+describe('readGroupAllowlist', () => {
+  it('未設定・空なら null（全グループ）', () => {
+    expect(readGroupAllowlist({})).toBeNull();
+    expect(readGroupAllowlist({ NOTIFY_GROUP_IDS: '  ' })).toBeNull();
+    expect(readGroupAllowlist({ NOTIFY_GROUP_IDS: ' , ' })).toBeNull();
+  });
+
+  it('カンマ・空白・改行・読点で区切り、重複を除く', () => {
+    expect(readGroupAllowlist({ NOTIFY_GROUP_IDS: 'aB3dE5fG7hJ9kL1mN2pQ' })).toEqual(['aB3dE5fG7hJ9kL1mN2pQ']);
+    expect(readGroupAllowlist({ NOTIFY_GROUP_IDS: 'g1, g2\ng3、g1' })).toEqual(['g1', 'g2', 'g3']);
+  });
+
+  it('ID として正しくない値は ConfigError', () => {
+    expect(() => readGroupAllowlist({ NOTIFY_GROUP_IDS: 'groups/g1' })).toThrow(ConfigError);
+    expect(() => readGroupAllowlist({ NOTIFY_GROUP_IDS: 'g1,山田家' })).toThrow(/山田家/);
   });
 });
