@@ -1,0 +1,68 @@
+.picker {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 112px;
+  gap: var(--space-3);
+  align-items: start;
+}
+
+.name,
+.volume {
+  min-width: 0;
+}
+
+.statusExisting,
+.statusNew {
+  font-size: var(--font-size-xs);
+  line-height: 1.5;
+}
+
+.statusExisting {
+  color: var(--color-primary-text);
+}
+
+.statusNew {
+  color: var(--color-text-tertiary);
+}
+
+.suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.suggestion {
+  position: relative;
+  max-width: 100%;
+  min-height: 36px;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-full);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-primary-text);
+  font-size: var(--font-size-sm);
+}
+
+.suggestionLabel {
+  display: block;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 見た目は 36px、タップ領域は上下に広げて 44px */
+.suggestion::after {
+  content: '';
+  position: absolute;
+  inset: -4px 0;
+}
+
+.suggestion:active {
+  background: var(--color-surface-pressed);
+}

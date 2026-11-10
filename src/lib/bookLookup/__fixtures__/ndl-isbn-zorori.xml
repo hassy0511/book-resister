@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss xmlns:dcndl="http://ndl.go.jp/dcndl/terms/" xmlns:rdfs="http://www.w3.org/2000/01/rdf-schema#" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:openSearch="http://a9.com/-/spec/opensearchrss/1.0/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcmitype="http://purl.org/dc/dcmitype/" version="2.0">
+  <channel>
+    <title>9784591025093 - 国立国会図書館サーチ OpenSearch</title>
+    <link>https://ndlsearch.ndl.go.jp/api/opensearch?isbn=9784591025093</link>
+    <description>Search results for isbn=9784591025093 Results 1 to 3 of 3</description>
+    <language>ja</language>
+    <openSearch:totalResults>3</openSearch:totalResults>
+    <openSearch:startIndex>1</openSearch:startIndex>
+    <openSearch:itemsPerPage>3</openSearch:itemsPerPage>
+    <item>
+      <title>かいけつゾロリのドラゴンたいじ</title>
+      <link>https://ndlsearch.ndl.go.jp/books/R100000002-I000001889001</link>
+      <description><![CDATA[<p>ポプラ社,1987.11</p><ul><li>タイトル： かいけつゾロリのドラゴンたいじ</li><li>著者： 原ゆたか さく・え</li></ul>]]></description>
+      <author>原ゆたか さく・え,</author>
+      <category>図書</category>
+      <category>児童書</category>
+      <guid isPermaLink="true">https://ndlsearch.ndl.go.jp/books/R100000002-I000001889001</guid>
+      <pubDate>Sun, 01 Nov 1987 00:00:00 +0900</pubDate>
+      <dc:title>かいけつゾロリのドラゴンたいじ</dc:title>
+      <dcndl:titleTranscription>カイケツ ゾロリ ノ ドラゴン タイジ</dcndl:titleTranscription>
+      <dc:creator>原, ゆたか, 1953-</dc:creator>
+      <dcndl:seriesTitle>ポプラ社の小さな童話 ; 48. かいけつゾロリシリーズ ; 1</dcndl:seriesTitle>
+      <dcterms:issued xsi:type="dcterms:W3CDTF">1987</dcterms:issued>
+      <dcndl:price>880円</dcndl:price>
+      <dc:extent>93p ; 22cm</dc:extent>
+      <dc:identifier xsi:type="dcndl:ISBN">4-591-02509-8</dc:identifier>
+      <dc:identifier xsi:type="dcndl:JPNO">88010001</dc:identifier>
+      <dc:subject xsi:type="dcndl:NDC9">913.6</dc:subject>
+      <rdfs:seeAlso rdf:resource="https://ndlsearch.ndl.go.jp/books/R100000002-I000001889001"/>
+    </item>
+    <item>
+      <title>かいけつゾロリのドラゴンたいじ</title>
+      <link>https://ndlsearch.ndl.go.jp/books/R100000001-I000000000002</link>
+      <author>原ゆたか さく・え,</author>
+      <category>図書</category>
+      <guid isPermaLink="true">https://ndlsearch.ndl.go.jp/books/R100000001-I000000000002</guid>
+      <dc:title>かいけつゾロリのドラゴンたいじ</dc:title>
+      <dc:creator>原ゆたか さく・え</dc:creator>
+      <dc:publisher>ポプラ社</dc:publisher>
+      <dcterms:issued xsi:type="dcterms:W3CDTF">1987</dcterms:issued>
+      <dc:identifier xsi:type="dcndl:ISBN">9784591025093</dc:identifier>
+    </item>
+    <item>
+      <title>かいけつゾロリ 1-10 (セット)</title>
+      <link>https://ndlsearch.ndl.go.jp/books/R100000001-I000000000003</link>
+      <category>図書</category>
+      <dc:title>かいけつゾロリ セット</dc:title>
+      <dc:creator>原ゆたか 作</dc:creator>
+      <dc:publisher>ポプラ社</dc:publisher>
+      <dc:identifier xsi:type="dcndl:ISBN">9784591100035</dc:identifier>
+    </item>
+  </channel>
+</rss>

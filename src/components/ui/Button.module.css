@@ -1,0 +1,121 @@
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  min-height: var(--tap-size);
+  padding: 0 var(--space-5);
+  border-radius: var(--radius-md);
+  border: 1px solid transparent;
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-medium);
+  line-height: 1.2;
+  text-align: center;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  transition:
+    background-color var(--duration-fast) ease,
+    transform var(--duration-fast) ease,
+    opacity var(--duration-fast) ease;
+}
+
+.button:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+.button:disabled {
+  opacity: 0.45;
+}
+
+.button[aria-busy='true'] {
+  opacity: 0.75;
+}
+
+.label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.icon {
+  display: inline-flex;
+  flex-shrink: 0;
+}
+
+.icon > svg {
+  width: 20px;
+  height: 20px;
+}
+
+.spinner {
+  flex-shrink: 0;
+}
+
+/* ---- 種類 ---- */
+.primary {
+  background: var(--color-primary);
+  color: var(--color-primary-contrast);
+}
+
+.primary:active:not(:disabled) {
+  background: var(--color-primary-pressed);
+}
+
+.secondary {
+  background: var(--color-surface);
+  color: var(--color-primary-text);
+  border-color: var(--color-border);
+}
+
+.secondary:active:not(:disabled) {
+  background: var(--color-surface-pressed);
+}
+
+.danger {
+  background: var(--color-danger);
+  color: #ffffff;
+}
+
+.danger:active:not(:disabled) {
+  background: var(--color-danger-pressed);
+}
+
+.ghost {
+  background: transparent;
+  color: var(--color-primary-text);
+  padding: 0 var(--space-3);
+}
+
+.ghost:active:not(:disabled) {
+  background: var(--color-surface-pressed);
+}
+
+/* ---- 大きさ（どれもタップ領域は 44px 以上） ---- */
+.sm {
+  padding-left: var(--space-3);
+  padding-right: var(--space-3);
+  font-size: var(--font-size-sm);
+}
+
+.sm .icon > svg {
+  width: 18px;
+  height: 18px;
+}
+
+.md {
+  font-size: var(--font-size-md);
+}
+
+.lg {
+  min-height: 52px;
+  font-size: var(--font-size-lg);
+  border-radius: var(--radius-lg);
+}
+
+.block {
+  display: flex;
+  width: 100%;
+}

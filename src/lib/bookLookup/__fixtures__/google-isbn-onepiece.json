@@ -1,0 +1,53 @@
+{
+  "kind": "books#volumes",
+  "totalItems": 1,
+  "items": [
+    {
+      "kind": "books#volume",
+      "id": "Xk2fEAAAQBAJ",
+      "etag": "abcdEFGHijk",
+      "selfLink": "https://www.googleapis.com/books/v1/volumes/Xk2fEAAAQBAJ",
+      "volumeInfo": {
+        "title": "ONE PIECE 104",
+        "authors": ["尾田栄一郎"],
+        "publisher": "集英社",
+        "publishedDate": "2022-11-04",
+        "description": "ルフィとカイドウの戦いに決着が…!?",
+        "industryIdentifiers": [
+          { "type": "ISBN_10", "identifier": "4088833139" },
+          { "type": "ISBN_13", "identifier": "9784088833132" }
+        ],
+        "readingModes": { "text": false, "image": true },
+        "pageCount": 208,
+        "printType": "BOOK",
+        "categories": ["Comics & Graphic Novels"],
+        "maturityRating": "NOT_MATURE",
+        "allowAnonLogging": true,
+        "contentVersion": "0.1.0.0.preview.1",
+        "panelizationSummary": { "containsEpubBubbles": false, "containsImageBubbles": false },
+        "imageLinks": {
+          "smallThumbnail": "http://books.google.com/books/content?id=Xk2fEAAAQBAJ&printsec=frontcover&img=1&zoom=5&edge=curl&source=gbs_api",
+          "thumbnail": "http://books.google.com/books/content?id=Xk2fEAAAQBAJ&printsec=frontcover&img=1&zoom=1&edge=curl&source=gbs_api"
+        },
+        "language": "ja",
+        "previewLink": "http://books.google.co.jp/books?id=Xk2fEAAAQBAJ&printsec=frontcover&dq=isbn:9784088833132&hl=&cd=1&source=gbs_api",
+        "infoLink": "http://books.google.co.jp/books?id=Xk2fEAAAQBAJ&dq=isbn:9784088833132&hl=&source=gbs_api",
+        "canonicalVolumeLink": "https://books.google.com/books/about/ONE_PIECE_104.html?hl=&id=Xk2fEAAAQBAJ"
+      },
+      "saleInfo": { "country": "JP", "saleability": "NOT_FOR_SALE", "isEbook": false },
+      "accessInfo": {
+        "country": "JP",
+        "viewability": "PARTIAL",
+        "embeddable": true,
+        "publicDomain": false,
+        "textToSpeechPermission": "ALLOWED",
+        "epub": { "isAvailable": false },
+        "pdf": { "isAvailable": false },
+        "webReaderLink": "http://play.google.com/books/reader?id=Xk2fEAAAQBAJ&hl=&source=gbs_api",
+        "accessViewStatus": "SAMPLE",
+        "quoteSharingAllowed": false
+      },
+      "searchInfo": { "textSnippet": "ルフィとカイドウの戦いに決着が…!?" }
+    }
+  ]
+}

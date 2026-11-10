@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss xmlns:dcndl="http://ndl.go.jp/dcndl/terms/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:openSearch="http://a9.com/-/spec/opensearchrss/1.0/" xmlns:dc="http://purl.org/dc/elements/1.1/" version="2.0">
+  <channel>
+    <title>9784088833132 - 国立国会図書館サーチ OpenSearch</title>
+    <link>https://ndlsearch.ndl.go.jp/api/opensearch?isbn=9784088833132</link>
+    <description>Search results for isbn=9784088833132 Results 0</description>
+    <language>ja</language>
+    <openSearch:totalResults>0</openSearch:totalResults>
+    <openSearch:startIndex>1</openSearch:startIndex>
+    <openSearch:itemsPerPage>0</openSearch:itemsPerPage>
+  </channel>
+</rss>

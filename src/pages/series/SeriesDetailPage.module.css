@@ -1,0 +1,439 @@
+.content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+/* ---- 巻の状態の色（マス目・凡例・バッジで共通） ---- */
+.stateRead {
+  background: var(--color-primary);
+  color: var(--color-primary-contrast);
+  border-color: var(--color-primary);
+}
+
+.statePartial {
+  background: var(--color-warning-soft);
+  color: var(--color-warning);
+  border-color: var(--color-warning);
+}
+
+.stateUnread {
+  background: var(--color-surface-2);
+  color: var(--color-text-secondary);
+  border-color: var(--color-border);
+}
+
+.stateReading {
+  background: var(--color-info-soft);
+  color: var(--color-info);
+  border-color: var(--color-info);
+}
+
+.stateNone {
+  background: transparent;
+  color: var(--color-text-tertiary);
+  border-color: var(--color-border);
+  border-style: dashed;
+}
+
+/* ---- 要約 ---- */
+.summary {
+  flex-shrink: 0;
+}
+
+.summary > div {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.numbers {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-2);
+  margin: 0;
+}
+
+.number {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.number dt {
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-xs);
+}
+
+.number dd {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  white-space: nowrap;
+}
+
+.number strong {
+  margin-right: 2px;
+  font-size: var(--font-size-2xl);
+  font-weight: var(--font-weight-bold);
+  font-variant-numeric: tabular-nums;
+}
+
+.unknown {
+  color: var(--color-text-tertiary);
+  font-size: var(--font-size-md);
+  line-height: 36px;
+}
+
+.progress {
+  position: relative;
+  height: 10px;
+  overflow: hidden;
+  border-radius: var(--radius-full);
+  background: var(--color-surface-2);
+}
+
+.progressBorrowed,
+.progressRead {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: var(--radius-full);
+}
+
+.progressBorrowed {
+  background: var(--color-primary-soft);
+  box-shadow: inset 0 0 0 1px var(--color-primary);
+}
+
+.progressRead {
+  background: var(--color-primary);
+}
+
+.missing {
+  font-size: var(--font-size-md);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.missingLabel {
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+}
+
+.missingValue {
+  font-weight: var(--font-weight-bold);
+  font-variant-numeric: tabular-nums;
+}
+
+.complete {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--color-primary-text);
+  font-weight: var(--font-weight-bold);
+}
+
+.totalHint {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--color-separator);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.totalHint > button {
+  flex-shrink: 0;
+}
+
+/* ---- 見出し付きのまとまり ---- */
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.sectionHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.sectionTitle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 var(--space-1);
+  font-size: var(--font-size-md);
+}
+
+.sectionCount {
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  font-weight: normal;
+}
+
+.viewToggle {
+  flex-shrink: 0;
+  width: 160px;
+}
+
+/* ---- マス目 ---- */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(52px, 1fr));
+  gap: var(--space-2);
+}
+
+.cell {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  width: 100%;
+  min-height: 52px;
+  border: 2px solid;
+  border-radius: var(--radius-md);
+  font-variant-numeric: tabular-nums;
+  text-decoration: none;
+  -webkit-touch-callout: none;
+}
+
+a.cell,
+button.cell {
+  cursor: pointer;
+  transition:
+    transform var(--duration-fast) ease,
+    opacity var(--duration-fast) ease;
+}
+
+a.cell:active,
+button.cell:active {
+  transform: scale(0.95);
+  opacity: 0.8;
+}
+
+.cellNumber {
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-bold);
+  line-height: 1.1;
+}
+
+.cellIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 14px;
+}
+
+.cellMulti {
+  position: absolute;
+  top: -7px;
+  right: -7px;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  border-radius: var(--radius-full);
+  background: var(--color-text);
+  color: var(--color-bg);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-bold);
+  line-height: 20px;
+  text-align: center;
+}
+
+/* 前に読んだ巻を読み返すために借りている（貸出中の色のまま、左上に読んだ印） */
+.cellReadMark {
+  position: absolute;
+  top: -7px;
+  left: -7px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--color-bg);
+  border-radius: var(--radius-full);
+  background: var(--color-primary);
+  color: var(--color-primary-contrast);
+}
+
+/* ---- 凡例 ---- */
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+  padding: 0 var(--space-1);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.legendItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.swatch {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: 2px solid;
+  border-radius: 6px;
+}
+
+.legendCount {
+  color: var(--color-text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+.legendNote {
+  padding: 0 var(--space-1);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-xs);
+  line-height: 1.6;
+}
+
+.legendReadMark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  margin-right: 2px;
+  border-radius: var(--radius-full);
+  background: var(--color-primary);
+  color: var(--color-primary-contrast);
+  vertical-align: -3px;
+}
+
+/* ---- 一覧 ---- */
+.volList > li + li {
+  border-top: 1px solid var(--color-separator);
+}
+
+.volRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 80px;
+  padding: var(--space-2) var(--space-4);
+  color: var(--color-text);
+  text-decoration: none;
+  -webkit-touch-callout: none;
+  transition: background-color var(--duration-fast) ease;
+}
+
+.volRow:active {
+  background: var(--color-surface-pressed);
+}
+
+.volNo {
+  flex-shrink: 0;
+  min-width: 2.6em;
+  color: var(--color-text);
+  font-weight: var(--font-weight-bold);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.volNo::after {
+  content: '巻';
+  margin-left: 1px;
+  font-size: var(--font-size-xs);
+  font-weight: normal;
+}
+
+.volNoGap {
+  color: var(--color-text-tertiary);
+}
+
+.volMain {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+}
+
+.volTitle {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  font-weight: var(--font-weight-medium);
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.volSub {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px var(--space-2);
+  color: var(--color-text-tertiary);
+  font-size: var(--font-size-xs);
+}
+
+.gapRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 44px;
+  padding: var(--space-2) var(--space-4);
+  color: var(--color-text-tertiary);
+  font-size: var(--font-size-sm);
+  background: repeating-linear-gradient(
+    135deg,
+    transparent 0 8px,
+    var(--color-surface-2) 8px 10px
+  );
+}
+
+.stateBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border: 1px solid;
+  border-radius: var(--radius-full);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-bold);
+  line-height: 1.3;
+  white-space: nowrap;
+}
+
+.chevron {
+  flex-shrink: 0;
+  margin-right: calc(-1 * var(--space-1));
+  color: var(--color-text-tertiary);
+}
+
+/* ---- 同じ巻の本を選ぶシート ---- */
+.pickList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: 0 var(--space-4) var(--space-4);
+}
+
+.pickLead {
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+/* ---- 編集シート ---- */
+.sheetForm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}

@@ -1,0 +1,47 @@
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  max-width: 100%;
+  border-radius: var(--radius-full);
+  font-weight: var(--font-weight-bold);
+  line-height: 1.2;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.sm {
+  padding: 3px 8px;
+  font-size: var(--font-size-xs);
+}
+
+.md {
+  padding: 5px 12px;
+  font-size: var(--font-size-sm);
+}
+
+.overdue {
+  background: var(--color-overdue-bg);
+  color: var(--color-overdue);
+}
+
+.soon {
+  background: var(--color-soon-bg);
+  color: var(--color-soon);
+}
+
+.ok {
+  background: var(--color-ok-bg);
+  color: var(--color-ok);
+  font-weight: var(--font-weight-medium);
+}
+
+.date {
+  font-weight: var(--font-weight-medium);
+}
+
+.label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

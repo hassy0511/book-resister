@@ -1,0 +1,77 @@
+{
+  "kind": "books#volumes",
+  "totalItems": 412,
+  "items": [
+    {
+      "kind": "books#volume",
+      "id": "G1aaAAAACAAJ",
+      "volumeInfo": {
+        "title": "ぐりとぐら",
+        "authors": ["中川李枝子", "大村百合子"],
+        "publisher": "福音館書店",
+        "publishedDate": "1967",
+        "industryIdentifiers": [
+          { "type": "ISBN_10", "identifier": "4834000826" },
+          { "type": "ISBN_13", "identifier": "9784834000825" }
+        ],
+        "printType": "BOOK",
+        "imageLinks": {
+          "smallThumbnail": "http://books.google.com/books/content?id=G1aaAAAACAAJ&printsec=frontcover&img=1&zoom=5&source=gbs_api",
+          "thumbnail": "http://books.google.com/books/content?id=G1aaAAAACAAJ&printsec=frontcover&img=1&zoom=1&source=gbs_api"
+        },
+        "language": "ja"
+      }
+    },
+    {
+      "kind": "books#volume",
+      "id": "G2bbAAAACAAJ",
+      "volumeInfo": {
+        "title": "ぐりとぐらとくるりくら",
+        "authors": ["なかがわ りえこ", "やまわき ゆりこ"],
+        "publisher": "福音館書店",
+        "publishedDate": "1992",
+        "industryIdentifiers": [{ "type": "ISBN_13", "identifier": "9784834016222" }],
+        "printType": "BOOK",
+        "language": "ja"
+      }
+    },
+    {
+      "kind": "books#volume",
+      "id": "G3ccAAAAMAAJ",
+      "volumeInfo": {
+        "title": "ぐりとぐら",
+        "subtitle": "こどものとも 1963年12月号",
+        "authors": ["中川李枝子"],
+        "publisher": "福音館書店",
+        "industryIdentifiers": [{ "type": "OTHER", "identifier": "UOM:39015000000001" }],
+        "printType": "BOOK",
+        "language": "ja"
+      }
+    },
+    {
+      "kind": "books#volume",
+      "id": "G4ddAAAACAAJ",
+      "volumeInfo": {
+        "title": "ぐりとぐらの1ねんかん",
+        "authors": ["なかがわりえこ"],
+        "publisher": "福音館書店",
+        "industryIdentifiers": [
+          { "type": "ISBN_10", "identifier": "4834003507" },
+          { "type": "ISBN_13", "identifier": "9784834003505" }
+        ],
+        "imageLinks": {
+          "thumbnail": "http://books.google.com/books/content?id=G4ddAAAACAAJ&printsec=frontcover&img=1&zoom=1&edge=curl&source=gbs_api"
+        },
+        "language": "ja"
+      }
+    },
+    {
+      "kind": "books#volume",
+      "id": "G5eeAAAACAAJ",
+      "volumeInfo": {
+        "authors": ["タイトルなし"],
+        "language": "ja"
+      }
+    }
+  ]
+}

@@ -1,0 +1,111 @@
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.field + .field {
+  margin-top: var(--space-4);
+}
+
+.label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+}
+
+.required {
+  padding: 0 6px;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-2);
+  color: var(--color-text-tertiary);
+  font-size: 11px;
+  font-weight: var(--font-weight-medium);
+}
+
+.hint {
+  color: var(--color-text-tertiary);
+  font-size: var(--font-size-xs);
+  line-height: 1.5;
+}
+
+.error {
+  color: var(--color-danger);
+  font-size: var(--font-size-sm);
+  line-height: 1.5;
+}
+
+/* 入力欄の外枠（input / select / textarea を包む） */
+.box {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-height: 48px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  transition:
+    border-color var(--duration-fast) ease,
+    box-shadow var(--duration-fast) ease;
+}
+
+.box:focus-within {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 22%, transparent);
+}
+
+.boxInvalid {
+  border-color: var(--color-danger);
+}
+
+.boxDisabled {
+  opacity: 0.55;
+}
+
+/* input / select / textarea 本体（16px 以上で iOS のズームを防ぐ） */
+.control {
+  flex: 1;
+  min-width: 0;
+  width: 100%;
+  min-height: 46px;
+  padding: 10px var(--space-3);
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--color-text);
+  font-size: max(16px, 1rem);
+  line-height: 1.4;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.control:focus,
+.control:focus-visible {
+  outline: none;
+}
+
+.control::placeholder {
+  color: var(--color-text-tertiary);
+}
+
+textarea.control {
+  min-height: 96px;
+  resize: vertical;
+}
+
+.adornment {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  padding: 0 var(--space-3);
+  color: var(--color-text-tertiary);
+  font-size: var(--font-size-md);
+}
+
+.leadingAdornment {
+  padding-right: 0;
+}

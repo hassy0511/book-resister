@@ -1,0 +1,58 @@
+/* ---- 自分とグループ ---- */
+.profileCard {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  min-height: 80px;
+  margin-bottom: var(--space-6);
+  padding: var(--space-4);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-sm);
+  color: var(--color-text);
+  -webkit-touch-callout: none;
+  transition: background-color var(--duration-fast) ease;
+}
+
+.profileCard:active {
+  background: var(--color-surface-pressed);
+}
+
+.profileText {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+
+.profileName {
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-bold);
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.profileGroup {
+  margin-top: 2px;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  overflow-wrap: anywhere;
+}
+
+.chevron {
+  flex-shrink: 0;
+  color: var(--color-text-tertiary);
+}
+
+/* ---- アプリの情報 ---- */
+.appInfo {
+  margin-top: var(--space-8);
+  color: var(--color-text-tertiary);
+  font-size: var(--font-size-xs);
+  line-height: 1.6;
+  text-align: center;
+}
+
+.email {
+  overflow-wrap: anywhere;
+}

@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss xmlns:dcndl="http://ndl.go.jp/dcndl/terms/" xmlns:rdfs="http://www.w3.org/2000/01/rdf-schema#" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:openSearch="http://a9.com/-/spec/opensearchrss/1.0/" xmlns:dc="http://purl.org/dc/elements/1.1/" version="2.0">
+  <channel>
+    <title>9784088833132 - 国立国会図書館サーチ OpenSearch</title>
+    <openSearch:totalResults>1</openSearch:totalResults>
+    <item>
+      <title>ONE PIECE</title>
+      <link>https://ndlsearch.ndl.go.jp/books/R100000002-I000032400000</link>
+      <author>尾田栄一郎 著,</author>
+      <category>図書</category>
+      <dc:title>ONE PIECE</dc:title>
+      <dcndl:titleTranscription>ワンピース</dcndl:titleTranscription>
+      <dc:creator>尾田, 栄一郎, 1975-</dc:creator>
+      <dcndl:volume>巻104</dcndl:volume>
+      <dcndl:seriesTitle>ジャンプ・コミックス</dcndl:seriesTitle>
+      <dc:publisher>集英社</dc:publisher>
+      <dcterms:issued xsi:type="dcterms:W3CDTF">2022.11</dcterms:issued>
+      <dc:identifier xsi:type="dcndl:ISBN">978-4-08-883313-2</dc:identifier>
+    </item>
+  </channel>
+</rss>

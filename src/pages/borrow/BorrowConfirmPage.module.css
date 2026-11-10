@@ -1,0 +1,309 @@
+.content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.emptyActions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  width: min(100%, 320px);
+}
+
+/* ---- エラー ---- */
+
+.errorBox {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-lg);
+  background: var(--color-danger-soft);
+  color: var(--color-text);
+}
+
+.errorIcon {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: var(--color-danger);
+}
+
+.errorTitle {
+  color: var(--color-danger);
+  font-weight: var(--font-weight-bold);
+}
+
+.errorText {
+  font-size: var(--font-size-sm);
+  overflow-wrap: anywhere;
+}
+
+/* ---- まとめて設定 ---- */
+
+.settings {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.dates {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.inlineAction {
+  align-self: flex-start;
+  margin-top: calc(-1 * var(--space-2));
+  margin-left: calc(-1 * var(--space-2));
+}
+
+.noLocation {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--color-warning-soft);
+}
+
+.noLocationText {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  font-size: var(--font-size-sm);
+}
+
+.noLocationIcon {
+  flex-shrink: 0;
+  margin-top: 1px;
+  color: var(--color-warning);
+}
+
+/* ---- 本の一覧 ---- */
+
+.listHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  min-height: var(--tap-size);
+  margin-top: var(--space-1);
+}
+
+.listTitle {
+  font-size: var(--font-size-md);
+}
+
+.items {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.itemCard > div {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.itemHead {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+
+.itemText {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  flex: 1;
+  gap: 2px;
+  min-width: 0;
+}
+
+.itemTitle {
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-bold);
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.itemMissing {
+  color: var(--color-warning);
+  font-weight: var(--font-weight-bold);
+}
+
+.itemLoading {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--color-text-secondary);
+}
+
+.itemMeta {
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  overflow-wrap: anywhere;
+}
+
+.itemIsbn {
+  color: var(--color-text-tertiary);
+  font-size: var(--font-size-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.existingBadge {
+  margin-top: var(--space-1);
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  background: var(--color-surface-2);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+}
+
+.removeButton {
+  flex-shrink: 0;
+  margin: calc(-1 * var(--space-2)) calc(-1 * var(--space-2)) 0 0;
+  color: var(--color-text-tertiary);
+}
+
+.manualFields {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+/* 注意の表示（貸出中・前に借りた・重複） */
+.notice {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-sm);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.noticeIcon {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.noticeDanger {
+  background: var(--color-danger-soft);
+  color: var(--color-text);
+}
+
+.noticeDanger .noticeIcon {
+  color: var(--color-danger);
+}
+
+.noticeWarning {
+  background: var(--color-warning-soft);
+  color: var(--color-text);
+}
+
+.noticeWarning .noticeIcon {
+  color: var(--color-warning);
+}
+
+.noticeInfo {
+  background: var(--color-info-soft);
+  color: var(--color-text);
+}
+
+.noticeInfo .noticeIcon {
+  color: var(--color-info);
+}
+
+/* ISBN なしで登録した同じタイトルの本の確認 */
+.sameTitle {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+  flex: 1;
+}
+
+.sameTitleLead {
+  font-weight: var(--font-weight-bold);
+}
+
+.sameTitleBook {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-1);
+}
+
+.sameTitleName {
+  font-weight: var(--font-weight-medium);
+}
+
+.sameTitleMeta {
+  display: block;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-xs);
+}
+
+.sameTitleNo {
+  align-self: flex-start;
+  margin-left: calc(-1 * var(--space-2));
+}
+
+.sameTitleHelp {
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-xs);
+}
+
+.seriesNote {
+  margin-top: calc(-1 * var(--space-2));
+  color: var(--color-warning);
+  font-size: var(--font-size-xs);
+}
+
+/* 返却日 */
+.due {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--color-separator);
+}
+
+.dueRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--tap-size);
+}
+
+.dueLabel {
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.dueValue {
+  flex: 1;
+  min-width: 0;
+  font-weight: var(--font-weight-bold);
+}
+
+/* ---- 下部 ---- */
+
+.reason {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.reasonIcon {
+  flex-shrink: 0;
+  color: var(--color-info);
+}

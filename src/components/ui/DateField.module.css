@@ -1,0 +1,22 @@
+.date {
+  min-height: 46px;
+  text-align: left;
+  /* iOS Safari の日付欄は中央寄せ・高さ 0 になりがちなので補正 */
+  display: block;
+}
+
+.date::-webkit-date-and-time-value {
+  text-align: left;
+  min-height: 1.4em;
+}
+
+.date::-webkit-calendar-picker-indicator {
+  opacity: 0.6;
+}
+
+.formatted {
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  white-space: nowrap;
+  pointer-events: none;
+}

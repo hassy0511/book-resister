@@ -1,0 +1,165 @@
+.content {
+  display: flex;
+  flex-direction: column;
+}
+
+.container {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  width: 100%;
+  max-width: 440px;
+  margin: 0 auto;
+  padding-top: var(--space-6);
+}
+
+/* ---- アプリ名 ---- */
+.hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  padding-bottom: var(--space-4);
+  text-align: center;
+}
+
+.logo {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 72px;
+  height: 72px;
+  margin-bottom: var(--space-2);
+  border-radius: 20px;
+  background: var(--color-primary);
+  color: var(--color-primary-contrast);
+  box-shadow: var(--shadow-md);
+}
+
+.appName {
+  font-size: var(--font-size-2xl);
+  letter-spacing: 0.04em;
+}
+
+.tagline {
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-md);
+  line-height: 1.6;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
+/* ---- お知らせ・エラー ---- */
+.notice {
+  font-size: var(--font-size-sm);
+}
+
+.noticeText {
+  display: flex;
+  gap: var(--space-2);
+  align-items: flex-start;
+  line-height: 1.6;
+}
+
+.noticeIcon {
+  flex-shrink: 0;
+  margin-top: 1px;
+  color: var(--color-primary-text);
+}
+
+.error {
+  display: flex;
+  gap: var(--space-2);
+  align-items: flex-start;
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--color-danger-soft);
+  color: var(--color-danger);
+  font-size: var(--font-size-sm);
+  line-height: 1.6;
+}
+
+.errorIcon {
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+/* ---- Google ---- */
+.googleButton {
+  color: var(--color-text);
+}
+
+/* アプリ内ブラウザでは使えないので薄くする（押せないわけではない） */
+.googleDimmed {
+  opacity: 0.55;
+}
+
+.googleNote {
+  margin-top: calc(-1 * var(--space-2));
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-xs);
+  line-height: 1.6;
+}
+
+/* ---- 区切り ---- */
+.divider {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin: var(--space-2) 0 0;
+  color: var(--color-text-tertiary);
+  font-size: var(--font-size-sm);
+}
+
+.divider::before,
+.divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--color-separator);
+}
+
+.modeSwitch {
+  width: 100%;
+}
+
+/* ---- メールアドレスのフォーム ---- */
+.form {
+  display: flex;
+  flex-direction: column;
+}
+
+/* 入力欄どうしの余白は Field 側（.field + .field）が付ける */
+.submit {
+  margin-top: var(--space-5);
+}
+
+.reveal {
+  min-width: var(--tap-size);
+  min-height: var(--tap-size);
+  margin-right: calc(-1 * var(--space-3));
+  padding: 0 var(--space-3);
+  color: var(--color-primary-text);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+}
+
+.note {
+  color: var(--color-text-tertiary);
+  font-size: var(--font-size-sm);
+  line-height: 1.6;
+  text-align: center;
+}
+
+/* ---- パスワード再設定 ---- */
+.resetForm {
+  display: flex;
+  flex-direction: column;
+}
+
+.resetLead {
+  margin-bottom: var(--space-4);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  line-height: 1.6;
+}

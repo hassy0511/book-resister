@@ -1,0 +1,339 @@
+/* ---- 状態 ---- */
+.statusCard {
+  margin-bottom: var(--space-2);
+}
+
+.statusHead {
+  display: flex;
+  gap: var(--space-3);
+  align-items: flex-start;
+}
+
+.statusIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-full);
+  background: var(--color-surface);
+  color: var(--color-primary-text);
+}
+
+.statusText {
+  flex: 1;
+  min-width: 0;
+}
+
+.statusTitle {
+  font-size: var(--font-size-lg);
+  line-height: 1.4;
+}
+
+.statusDesc {
+  margin-top: var(--space-1);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  line-height: 1.6;
+}
+
+.actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+}
+
+.actionHint {
+  color: var(--color-text-tertiary);
+  font-size: var(--font-size-xs);
+  line-height: 1.6;
+  text-align: center;
+}
+
+.recheck {
+  margin-top: var(--space-4);
+}
+
+/* ---- 手順 ---- */
+.guide {
+  margin-top: var(--space-6);
+}
+
+.sectionTitle {
+  padding: 0 var(--space-4) var(--space-2);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+}
+
+.steps {
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-sm);
+}
+
+.step {
+  display: flex;
+  gap: var(--space-3);
+  padding: var(--space-3) 0;
+}
+
+.step + .step {
+  border-top: 1px solid var(--color-separator);
+}
+
+.stepNum {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-full);
+  background: var(--color-primary);
+  color: var(--color-primary-contrast);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-bold);
+}
+
+.stepBody {
+  flex: 1;
+  min-width: 0;
+}
+
+.stepTitle {
+  font-weight: var(--font-weight-medium);
+  line-height: 1.6;
+}
+
+.stepText {
+  margin-top: 2px;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  line-height: 1.6;
+}
+
+.inlineIcon {
+  display: inline-block;
+  vertical-align: -3px;
+  color: var(--color-info);
+}
+
+/* 一覧に見つからないとき（上から順に試す。削除して追加し直すのは最後） */
+.troubleTitle {
+  margin-top: var(--space-5);
+}
+
+.trouble {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: var(--space-3) var(--space-4) var(--space-3) calc(var(--space-4) + 1.2em);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-sm);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  line-height: 1.6;
+  list-style: decimal;
+}
+
+.inAppHint {
+  margin-top: var(--space-3);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  line-height: 1.6;
+}
+
+/* ---- 図（iPhone の画面の一部を模したもの） ---- */
+.figure {
+  margin-top: var(--space-3);
+}
+
+.mockToolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-around;
+  height: 48px;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-2);
+  color: var(--color-info);
+}
+
+.mockHighlight,
+.mockAdd,
+.mockMenuActive {
+  position: relative;
+  border-radius: var(--radius-sm);
+  outline: 3px solid var(--color-warning);
+  outline-offset: 2px;
+  animation: pulse 1.6s ease-in-out infinite;
+}
+
+.mockHighlight {
+  display: flex;
+  padding: 4px;
+}
+
+.mockMenu {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-1);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-2);
+}
+
+.mockMenuRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 40px;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  font-size: var(--font-size-sm);
+}
+
+.mockMenuRow:first-child {
+  color: var(--color-text-tertiary);
+}
+
+.mockSheetHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  min-height: 44px;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-2);
+  font-size: var(--font-size-sm);
+}
+
+.mockCancel {
+  color: var(--color-info);
+}
+
+.mockSheetTitle {
+  font-weight: var(--font-weight-bold);
+  white-space: nowrap;
+}
+
+.mockAdd {
+  padding: 2px 6px;
+  color: var(--color-info);
+  font-weight: var(--font-weight-bold);
+}
+
+.mockHome {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  background: linear-gradient(160deg, var(--color-info-soft), var(--color-primary-soft));
+}
+
+.mockAppIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 14px;
+  background: var(--color-primary);
+  color: var(--color-primary-contrast);
+  box-shadow: var(--shadow-md);
+}
+
+.mockAppName {
+  font-size: var(--font-size-xs);
+}
+
+.mockSwitchRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 44px;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-2);
+  font-size: var(--font-size-sm);
+}
+
+.mockSwitch {
+  position: relative;
+  width: 44px;
+  height: 26px;
+  border-radius: var(--radius-full);
+  background: var(--color-success);
+  outline: 3px solid var(--color-warning);
+  outline-offset: 2px;
+}
+
+.mockSwitch::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 22px;
+  height: 22px;
+  border-radius: var(--radius-full);
+  background: #ffffff;
+  box-shadow: var(--shadow-sm);
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    outline-color: var(--color-warning);
+  }
+  50% {
+    outline-color: transparent;
+  }
+}
+
+/* ---- 届くお知らせ ---- */
+.about {
+  margin-top: var(--space-8);
+}
+
+.aboutList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.aboutItem {
+  display: flex;
+  gap: var(--space-3);
+  align-items: flex-start;
+}
+
+.aboutIcon {
+  display: flex;
+  flex-shrink: 0;
+  margin-top: 1px;
+  color: var(--color-primary-text);
+}
+
+.aboutTitle {
+  font-weight: var(--font-weight-medium);
+  line-height: 1.5;
+}
+
+.aboutText {
+  margin-top: 2px;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  line-height: 1.6;
+}
