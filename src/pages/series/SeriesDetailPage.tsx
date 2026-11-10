@@ -530,7 +530,7 @@ function VolumeList({ slots }: { slots: VolumeSlot<SeriesBook>[] }) {
             <li key={`book-${e.info.book.id}`}>
               <Link to={`/books/${encodeURIComponent(e.info.book.id)}`} className={styles.volRow}>
                 <span className={styles.volNo}>{e.volume}</span>
-                <BookCover title={e.info.book.title} coverUrl={e.info.book.coverUrl} size="sm" />
+                <BookCover title={e.info.book.title} coverUrl={e.info.book.coverUrl} isbn={e.info.book.isbn} size="sm" />
                 <span className={styles.volMain}>
                   <span className={styles.volTitle}>{e.info.book.title}</span>
                   <span className={styles.volSub}>
@@ -562,7 +562,7 @@ function StateBadge({ state, everRead }: { state: BookReadState; everRead: boole
 function BookInfoRow({ info }: { info: SeriesBookInfo<SeriesBook> }) {
   return (
     <ListRow
-      leading={<BookCover title={info.book.title} coverUrl={info.book.coverUrl} size="sm" />}
+      leading={<BookCover title={info.book.title} coverUrl={info.book.coverUrl} isbn={info.book.isbn} size="sm" />}
       title={info.book.title}
       subtitle={
         <span className={styles.volSub}>

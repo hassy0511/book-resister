@@ -118,11 +118,11 @@ describe('finalizeCandidate', () => {
     });
   });
 
-  it('表紙が無く ISBN があれば NDL の書影 URL を入れる', () => {
-    expect(finalizeCandidate(book({ isbn: '9784834000825' })).coverUrl).toBe(
+  it('表紙が無ければ既定では null（NDL の書影 URL は ndlThumbnail: true のときだけ）', () => {
+    expect(finalizeCandidate(book({ isbn: '9784834000825' }), { ndlThumbnail: true }).coverUrl).toBe(
       'https://ndlsearch.ndl.go.jp/thumbnail/9784834000825.jpg',
     );
-    expect(finalizeCandidate(book({ isbn: '9784834000825' }), { ndlThumbnail: false }).coverUrl).toBeNull();
+    expect(finalizeCandidate(book({ isbn: '9784834000825' })).coverUrl).toBeNull();
     expect(finalizeCandidate(book()).coverUrl).toBeNull();
     expect(finalizeCandidate(book({ isbn: '9784834000825', coverUrl: 'https://x' })).coverUrl).toBe('https://x');
   });

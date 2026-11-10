@@ -290,7 +290,7 @@ function LoanDetailView({ loan, locations, onLeaving }: LoanDetailViewProps) {
       {/* 本 */}
       <Card className={styles.bookCard} padded={false}>
         <Link to={`/books/${encodeURIComponent(loan.bookId)}`} className={styles.bookLink}>
-          <BookCover title={loan.book.title} coverUrl={loan.book.coverUrl} size="lg" alt={`${loan.book.title}の表紙`} />
+          <BookCover title={loan.book.title} coverUrl={loan.book.coverUrl} isbn={loan.book.isbn} size="lg" alt={`${loan.book.title}の表紙`} />
           <span className={styles.bookText}>
             <span className={styles.bookTitle}>{loan.book.title}</span>
             {loan.book.authors.length > 0 ? (

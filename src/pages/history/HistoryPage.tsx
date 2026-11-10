@@ -385,7 +385,7 @@ const HistoryRow = memo(function HistoryRow({ loan, locationName, borrowerName, 
   const authors = loan.book.authors.join('、');
   return (
     <Link to={`/books/${encodeURIComponent(loan.bookId)}`} className={styles.row}>
-      <BookCover title={loan.book.title} coverUrl={loan.book.coverUrl} size="sm" />
+      <BookCover title={loan.book.title} coverUrl={loan.book.coverUrl} isbn={loan.book.isbn} size="sm" />
       <span className={styles.rowMain}>
         <span className={styles.rowTitle}>{loan.book.title}</span>
         {authors ? <span className={styles.rowAuthors}>{authors}</span> : null}

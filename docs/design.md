@@ -149,7 +149,7 @@ searchByTitleDetailed(query, opts?): Promise<{ candidates: BookCandidate[]; fail
 - 出版社のレーベル名らしいシリーズ名（末尾が 文庫・新書・コミックス・絵本 など）はシリーズとして使わず、タイトルから推定する。
 - `searchByTitle` に ISBN として読める文字列（`normalizeIsbn` が読める。「ISBN978-4-…」・U+2010 のハイフン・全角Ｘも可）を渡すと `lookupByIsbn` の結果（0 件か 1 件）を返す。
 - Google Books は `VITE_GOOGLE_BOOKS_API_KEY` があれば `key=` を付ける。
-- 表紙が無い場合は NDL のサムネイル URL `https://ndlsearch.ndl.go.jp/thumbnail/{isbn13}.jpg` を候補にしてよい（`<img>` 表示のみ。読み込み失敗時は `BookCover` がプレースホルダに切り替える）。
+- 表紙: 書誌 API の URL（Google Books・openBD）を `coverUrl` に保存する。無ければ null。表示時は `BookCover` が `lib/coverUrls` の候補（保存した URL → 版元ドットコム `img.hanmoto.com/bd/img/{isbn13}.jpg` → `cover.openbd.jp/{isbn13}.jpg`）を順に試し、全部読めなければ頭文字のプレースホルダ。NDL の書影 API（`ndlsearch.ndl.go.jp/thumbnail/…`）は 2026-03-31 に提供終了したので使わない（保存済みでも飛ばす）。Google Books はキーが無いと上限に当たりやすいので、表紙を増やすには API キー（setup.md 手順 12）を設定する。
 
 ### 4.5 `src/lib/push.ts`
 

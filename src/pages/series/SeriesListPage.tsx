@@ -172,7 +172,7 @@ function SeriesRow({ row }: { row: Row }) {
   const parts = volumeParts(row);
   return (
     <Link to={`/series/${encodeURIComponent(series.id)}`} className={styles.row}>
-      <BookCover title={coverBook?.title ?? series.name} coverUrl={coverBook?.coverUrl ?? null} size="sm" />
+      <BookCover title={coverBook?.title ?? series.name} coverUrl={coverBook?.coverUrl ?? null} isbn={coverBook?.isbn ?? null} size="sm" />
       <span className={styles.main}>
         <span className={styles.name}>{series.name}</span>
         <span className={styles.meta}>

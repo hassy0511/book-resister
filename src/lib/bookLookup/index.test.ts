@@ -137,10 +137,10 @@ describe('lookupByIsbn', () => {
     });
   });
 
-  it('どの API にも表紙が無ければ NDL の書影 URL を入れる', async () => {
+  it('どの API にも表紙が無ければ coverUrl は null（提供が終わった NDL の書影 URL は入れない）', async () => {
     mockApis({ openbd: openbdNotFound, ndl: ndlZorori, google: googleEmpty });
     const c = await lookupByIsbn('9784591025093');
-    expect(c?.coverUrl).toBe('https://ndlsearch.ndl.go.jp/thumbnail/9784591025093.jpg');
+    expect(c?.coverUrl).toBeNull();
     expect(c?.source).toBe('ndl');
   });
 
@@ -343,8 +343,8 @@ describe('searchByTitle', () => {
       coverUrl: 'https://books.google.com/books/content?id=G1aaAAAACAAJ&printsec=frontcover&img=1&zoom=1&source=gbs_api',
       source: 'ndl',
     });
-    // 表紙の無い ISBN 付きの本は NDL の書影、ISBN も無ければ null
-    expect(list[1].coverUrl).toBe('https://ndlsearch.ndl.go.jp/thumbnail/9784834016222.jpg');
+    // 表紙の無い本は null（表示側が ISBN から書影を探す）
+    expect(list[1].coverUrl).toBeNull();
     expect(list[3].coverUrl).toBeNull();
   });
 

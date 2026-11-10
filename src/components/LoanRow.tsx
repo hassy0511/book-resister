@@ -73,7 +73,7 @@ export function LoanRow({
           {checked ? <CheckIcon size={16} strokeWidth={3} /> : null}
         </span>
       ) : null}
-      <BookCover title={loan.book.title} coverUrl={loan.book.coverUrl} size="sm" />
+      <BookCover title={loan.book.title} coverUrl={loan.book.coverUrl} isbn={loan.book.isbn} size="sm" />
       <span className={styles.main}>
         <span className={styles.title}>{loan.book.title}</span>
         <span className={styles.meta}>
