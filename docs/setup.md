@@ -46,7 +46,7 @@ Claude（このアプリを作った AI）とやり取りしている場合は�
 9. [家族を招待して、通知を送るグループを登録する](#9-家族を招待して通知を送るグループを登録する)
 10. [通知の動作を確認する](#10-通知の動作を確認する)
 11. [（任意）Google アカウントでもログインできるようにする](#11-任意google-アカウントでもログインできるようにする)
-12. [（任意）Google Books API キーを作る](#12-任意google-books-api-キーを作る)
+12. [（おすすめ）Google Books API キーを作る](#12-おすすめgoogle-books-api-キーを作る)
 13. [無料枠の目安とトラブルシュート](#13-無料枠の目安とトラブルシュート)
 14. [（開発者向け）ローカルでの開発](#14-開発者向けローカルでの開発)
 
@@ -365,20 +365,69 @@ Claude（このアプリを作った AI）とやり取りしている場合は�
 
 > **なぜアプリと同じドメイン（`<project>.web.app`）でログインするのか:** iPhone の Safari は、別のドメインのサイトがデータを保存することを制限しています（トラッキング防止）。ログインの処理を行うドメインがアプリの URL と違うと、ホーム画面のアプリで Google ログインの後に画面が戻ってこないことがあります。このアプリは自動でアプリと同じドメインを使うようにしてあり、手順 4 はそのための設定です。
 
-## 12. （任意）Google Books API キーを作る
+## 12. （おすすめ）Google Books API キーを作る
 
-本の情報（タイトル・表紙など）は、まず openBD と国立国会図書館サーチから探し、見つからないときに Google Books を使います。Google Books は API キーが無くても使えますが、利用者全体で共有の上限に当たりやすいため、キーを作っておくと安定します。**無料**です（請求先アカウントの登録も不要です）。
+本の情報（タイトル・表紙など）は openBD・国立国会図書館サーチ・Google Books から探します。Google Books は**キーが無いと世界中の利用者と 1 日の上限を分け合う**ため、日本の朝にはもう使い切られていて（エラー 429）、「本の検索サービスにつながりませんでした」になりやすくなります。自分のキーを作ると、このプロジェクト専用の上限（1 日 1,000 回）になり、表紙も出やすくなります。**無料**です（請求先の登録も不要）。
 
-1. <https://console.cloud.google.com/apis/library/books.googleapis.com> を開き、上部で自分のプロジェクトを選んで「**有効にする**」を押します。
-2. <https://console.cloud.google.com/apis/credentials> で「**＋ 認証情報を作成**」→「**API キー**」を押します。作成されたキーを控えます。
-3. 作成したキーを開き（「キーを編集」）、次のように**制限**をかけて保存します（他の人に勝手に使われないようにするため）。
-   - **アプリケーションの制限**: 「**ウェブサイト**（HTTP リファラー）」を選び、次を追加します。
-     - `https://<project>.web.app/*`
-     - `https://<project>.firebaseapp.com/*`
-     - （ローカル開発もする場合）`http://localhost:5173/*`
-   - **API の制限**: 「キーを制限」を選び、「**Books API**」だけにチェック。
-4. キーを Claude に送るか、`app.config.json` の `"googleBooksApiKey": ""` に入れて、`main` に取り込みます（制限をかけたキーは、アプリの中に入る公開の値として扱って構いません）。
+1. 手順 5 と同じように Cloud Shell（`>_`）を開きます。
+2. 下のコマンドを全部コピーして黒い画面に貼り付け、Enter を押します。プロジェクト ID を聞かれたら入力して Enter を押します。
 
+   ```bash
+   karita_books_key() {
+     local PROJECT_ID=""
+     read -r -p "Firebase のプロジェクト ID を入力して Enter: " PROJECT_ID
+     PROJECT_ID="$(printf '%s' "$PROJECT_ID" | tr -d '[:space:]')"
+     if [ -z "$PROJECT_ID" ]; then
+       echo "!! プロジェクト ID が空です。もう一度「karita_books_key」と入力して Enter を押してください。"
+       return 1
+     fi
+     gcloud config set project "$PROJECT_ID" >/dev/null 2>&1
+     if ! gcloud projects describe "$PROJECT_ID" >/dev/null 2>&1; then
+       echo "!! プロジェクト「$PROJECT_ID」が見つかりません。プロジェクト ID を確かめてください。"
+       return 1
+     fi
+
+     echo "== 1/3 Books API を有効にしています（1 分ほどかかることがあります）"
+     gcloud services enable books.googleapis.com apikeys.googleapis.com ||
+       { echo "!! Books API を有効にできませんでした。"; return 1; }
+
+     echo "== 2/3 キーを作っています"
+     local name
+     name="$(gcloud services api-keys list --filter='displayName=karita-books' --format='value(name)' 2>/dev/null | head -n 1)"
+     if [ -z "$name" ]; then
+       gcloud services api-keys create --display-name=karita-books \
+         --api-target=service=books.googleapis.com \
+         --allowed-referrers="https://${PROJECT_ID}.web.app/*,https://${PROJECT_ID}.firebaseapp.com/*" >/dev/null 2>&1 ||
+         { echo "!! キーを作れませんでした。少し待ってから「karita_books_key」と入力してやり直してください。"; return 1; }
+       name="$(gcloud services api-keys list --filter='displayName=karita-books' --format='value(name)' 2>/dev/null | head -n 1)"
+     fi
+     if [ -z "$name" ]; then
+       echo "!! 作ったキーが見つかりません。少し待ってから「karita_books_key」と入力してやり直してください。"
+       return 1
+     fi
+
+     echo "== 3/3 キーを取り出しています"
+     local key
+     key="$(gcloud services api-keys get-key-string "$name" --format='value(keyString)' 2>/dev/null)"
+     if [ -z "$key" ]; then
+       echo "!! キーを取り出せませんでした。少し待ってから「karita_books_key」と入力してやり直してください。"
+       return 1
+     fi
+     echo
+     echo "========================================================================"
+     echo " できました。次の 1 行（AIza で始まる）を Claude に送ってください。"
+     echo " （このアプリの URL からしか使えないよう制限してあるので、送って大丈夫です）"
+     echo
+     echo " $key"
+     echo "========================================================================"
+   }
+
+   karita_books_key
+   ```
+
+3. 最後に表示される `AIza` で始まる 1 行を **Claude に送ります**（このアプリの URL からしか使えないよう制限してあるので、送って大丈夫です）。
+   > **自分で書き込む場合:** `app.config.json` の `"googleBooksApiKey": ""` の `""` の間に入れて、`main` に取り込みます。
+4. `main` に入って公開されたら、アプリを一度完全に閉じて開き直します。
 
 ## 13. 無料枠の目安とトラブルシュート
 
@@ -473,7 +522,7 @@ Claude（このアプリを作った AI）とやり取りしている場合は�
 **本の情報（タイトル・表紙）が出ない**
 
 - 書誌情報のサービスが一時的に使えないことがあります。時間をおくか、タイトル検索・手入力で登録してください。
-- Google Books の上限に当たっている可能性があります。手順 12 の API キーを設定すると改善します。
+- 「本の検索サービスにつながりませんでした」が出る → Google Books の上限（キーなしは世界中で共有）に当たっていることが多いです。手順 12 の API キーを設定すると改善します。
 
 **アプリの更新が反映されない**
 
