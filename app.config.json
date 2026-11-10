@@ -7,7 +7,7 @@
     "appId": "1:214336796960:web:998ec74f05e6c60b4e7f45",
     "messagingSenderId": "214336796960"
   },
-  "vapidPublicKey": "",
+  "vapidPublicKey": "BGVEhCv5at3xnPkkTssf0cwZj7eckrkq1MvaliaF1yKuS9gFWiPVvycZ8r1F20IZdaETP4tJEaQW4Isexw09soI",
   "vapidSubject": "",
   "notifyGroupIds": "",
   "googleSignIn": false,
