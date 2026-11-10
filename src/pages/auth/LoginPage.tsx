@@ -14,6 +14,7 @@ import type { SegmentOption } from '../../components/ui';
 import { AlertIcon, BookIcon, InfoIcon } from '../../components/ui/icons';
 import { InAppBrowserNotice } from '../../components/InAppBrowserNotice';
 import { detectInAppBrowser } from '../../components/inAppBrowser';
+import { isGoogleSignInEnabled } from '../../firebase';
 import {
   MIN_PASSWORD_LENGTH,
   hasPendingInvite,
@@ -142,34 +143,38 @@ export default function LoginPage() {
           </div>
         ) : null}
 
-        <Button
-          variant="secondary"
-          size="lg"
-          block
-          icon={<GoogleLogo />}
-          loading={busy === 'google'}
-          disabled={busy !== null}
-          onClick={handleGoogle}
-          className={[styles.googleButton, inAppBrowser ? styles.googleDimmed : ''].filter(Boolean).join(' ')}
-          aria-describedby={inAppBrowser ? 'google-in-app-note' : undefined}
-        >
-          Google でログイン
-        </Button>
-        {inAppBrowser ? (
-          <p id="google-in-app-note" className={styles.googleNote}>
-            {inAppBrowser} の中のブラウザでは、Google のログインは Google によって止められます（エラー 403）。Safari
-            で開き直すか、下のメールアドレスでログインしてください。
-          </p>
-        ) : null}
-        {busy === 'google' ? (
-          <Button variant="ghost" block onClick={cancelGoogle}>
-            キャンセル（Google の画面から戻ってこないとき）
-          </Button>
-        ) : null}
+        {isGoogleSignInEnabled ? (
+          <>
+            <Button
+              variant="secondary"
+              size="lg"
+              block
+              icon={<GoogleLogo />}
+              loading={busy === 'google'}
+              disabled={busy !== null}
+              onClick={handleGoogle}
+              className={[styles.googleButton, inAppBrowser ? styles.googleDimmed : ''].filter(Boolean).join(' ')}
+              aria-describedby={inAppBrowser ? 'google-in-app-note' : undefined}
+            >
+              Google でログイン
+            </Button>
+            {inAppBrowser ? (
+              <p id="google-in-app-note" className={styles.googleNote}>
+                {inAppBrowser} の中のブラウザでは、Google のログインは Google によって止められます（エラー 403）。Safari
+                で開き直すか、下のメールアドレスでログインしてください。
+              </p>
+            ) : null}
+            {busy === 'google' ? (
+              <Button variant="ghost" block onClick={cancelGoogle}>
+                キャンセル（Google の画面から戻ってこないとき）
+              </Button>
+            ) : null}
 
-        <div className={styles.divider} role="separator">
-          <span>または メールアドレスで</span>
-        </div>
+            <div className={styles.divider} role="separator">
+              <span>または メールアドレスで</span>
+            </div>
+          </>
+        ) : null}
 
         <SegmentedControl
           ariaLabel="ログインか新規登録か"

@@ -18,6 +18,7 @@ vi.mock('./firebase', () => ({
   get isFirebaseConfigured() {
     return state.configured;
   },
+  isGoogleSignInEnabled: true,
 }));
 vi.mock('./auth/AuthProvider', () => ({
   AuthProvider: ({ children }: { children: ReactNode }) => children,

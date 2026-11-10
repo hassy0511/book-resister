@@ -46,7 +46,16 @@ const mocks = vi.hoisted(() => {
   };
 });
 
-vi.mock('../../firebase', () => ({ db: {}, auth: {}, app: {}, isFirebaseConfigured: true }));
+const firebaseFlags = vi.hoisted(() => ({ googleSignIn: true }));
+vi.mock('../../firebase', () => ({
+  db: {},
+  auth: {},
+  app: {},
+  isFirebaseConfigured: true,
+  get isGoogleSignInEnabled() {
+    return firebaseFlags.googleSignIn;
+  },
+}));
 vi.mock('../../auth/AuthProvider', () => ({
   useAuth: () => mocks.auth,
   authErrorMessage: (e: unknown) => (e instanceof Error ? e.message : 'ログインに失敗しました。'),
@@ -125,6 +134,17 @@ afterEach(() => {
 // ---------------------------------------------------------------------------
 
 describe('LoginPage', () => {
+  it('Google のログインを使わない設定では、Google のボタンを出さずにメールアドレスだけで登録できる', () => {
+    firebaseFlags.googleSignIn = false;
+    try {
+      renderAt('/login');
+      expect(screen.queryByRole('button', { name: /Google でログイン/ })).toBeNull();
+      expect(screen.getByLabelText('メールアドレス')).toBeTruthy();
+    } finally {
+      firebaseFlags.googleSignIn = true;
+    }
+  });
+
   it('新規登録では 6 文字未満のパスワードを止め、6 文字以上なら登録する', async () => {
     mocks.auth.signUpWithEmail.mockResolvedValue();
     renderAt('/login');

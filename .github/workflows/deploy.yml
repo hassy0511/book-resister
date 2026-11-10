@@ -4,12 +4,11 @@
 # 1 つでも失敗したらデプロイしない（CI とは別に動くため、CI の結果は待たない。手動実行も同じ）。
 # ルールのテストを通っていない firestore.rules が本番に反映されないようにするため。
 #
-# 必要な設定（Settings > Secrets and variables > Actions）:
-#   Secrets:   FIREBASE_SERVICE_ACCOUNT（デプロイ用サービスアカウント github-actions の鍵の JSON をそのまま。
-#              管理者権限を持つので、毎朝の通知には渡さない。通知は通知専用の NOTIFY_SERVICE_ACCOUNT を使う）
-#   Variables: VITE_FIREBASE_API_KEY, VITE_FIREBASE_AUTH_DOMAIN, VITE_FIREBASE_PROJECT_ID,
-#              VITE_FIREBASE_APP_ID, VITE_FIREBASE_MESSAGING_SENDER_ID, VITE_VAPID_PUBLIC_KEY,
-#              VITE_GOOGLE_BOOKS_API_KEY（任意）
+# 必要な設定:
+#   app.config.json（秘密ではない設定。Firebase の設定値と VAPID の公開鍵）
+#   Secrets: FIREBASE_SERVICE_ACCOUNT（デプロイ用サービスアカウント github-actions の鍵の JSON をそのまま。
+#            管理者権限を持つので、毎朝の通知には渡さない。通知は通知専用の NOTIFY_SERVICE_ACCOUNT を使う）
+#   Variables は不要（同じ名前の Variables があれば app.config.json より優先する）
 # 手順は docs/setup.md を参照。
 name: デプロイ
 
@@ -30,14 +29,6 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    env:
-      VITE_FIREBASE_API_KEY: ${{ vars.VITE_FIREBASE_API_KEY }}
-      VITE_FIREBASE_AUTH_DOMAIN: ${{ vars.VITE_FIREBASE_AUTH_DOMAIN }}
-      VITE_FIREBASE_PROJECT_ID: ${{ vars.VITE_FIREBASE_PROJECT_ID }}
-      VITE_FIREBASE_APP_ID: ${{ vars.VITE_FIREBASE_APP_ID }}
-      VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ vars.VITE_FIREBASE_MESSAGING_SENDER_ID }}
-      VITE_VAPID_PUBLIC_KEY: ${{ vars.VITE_VAPID_PUBLIC_KEY }}
-      VITE_GOOGLE_BOOKS_API_KEY: ${{ vars.VITE_GOOGLE_BOOKS_API_KEY }}
     steps:
       - uses: actions/checkout@v4
 
@@ -52,26 +43,26 @@ jobs:
           distribution: temurin
           java-version: 21
 
-      - name: 設定の確認
-        env:
-          HAS_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT != '' }}
-        run: |
-          missing=""
-          for name in VITE_FIREBASE_API_KEY VITE_FIREBASE_AUTH_DOMAIN VITE_FIREBASE_PROJECT_ID \
-                      VITE_FIREBASE_APP_ID VITE_FIREBASE_MESSAGING_SENDER_ID VITE_VAPID_PUBLIC_KEY; do
-            if [ -z "${!name}" ]; then missing="$missing $name"; fi
-          done
-          if [ -n "$missing" ]; then
-            echo "::error::GitHub の Variables が未設定です:$missing（docs/setup.md の手順 7 を参照）"
-            exit 1
-          fi
-          if [ "$HAS_SERVICE_ACCOUNT" != "true" ]; then
-            echo "::error::GitHub の Secrets に FIREBASE_SERVICE_ACCOUNT が未設定です（docs/setup.md の手順 6・7 を参照）"
-            exit 1
-          fi
-
       - name: 依存パッケージのインストール
         run: npm ci --no-audit --no-fund
+
+      # app.config.json の設定を読み込む（同じ名前の Variables があればそちらを優先）
+      - name: 設定の読み込みと確認
+        env:
+          VITE_FIREBASE_API_KEY: ${{ vars.VITE_FIREBASE_API_KEY }}
+          VITE_FIREBASE_AUTH_DOMAIN: ${{ vars.VITE_FIREBASE_AUTH_DOMAIN }}
+          VITE_FIREBASE_PROJECT_ID: ${{ vars.VITE_FIREBASE_PROJECT_ID }}
+          VITE_FIREBASE_APP_ID: ${{ vars.VITE_FIREBASE_APP_ID }}
+          VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ vars.VITE_FIREBASE_MESSAGING_SENDER_ID }}
+          VITE_VAPID_PUBLIC_KEY: ${{ vars.VITE_VAPID_PUBLIC_KEY }}
+          VITE_GOOGLE_BOOKS_API_KEY: ${{ vars.VITE_GOOGLE_BOOKS_API_KEY }}
+          HAS_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT != '' }}
+        run: |
+          npx tsx scripts/appConfig.ts --check-deploy
+          if [ "$HAS_SERVICE_ACCOUNT" != "true" ]; then
+            echo "::error::GitHub の Secrets に FIREBASE_SERVICE_ACCOUNT が未設定です（docs/setup.md の手順 5・6 を参照）"
+            exit 1
+          fi
 
       # ---- テスト（失敗したらここで止まり、デプロイしない） ----
       - name: 型チェック

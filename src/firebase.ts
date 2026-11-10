@@ -27,6 +27,13 @@ function envString(value: unknown): string {
 
 const useEmulators = envString(import.meta.env.VITE_USE_EMULATORS) === 'true';
 
+/**
+ * 「Google でログイン」を出すか。VITE_GOOGLE_SIGN_IN=false のときだけ隠す
+ * （本番では app.config.json の googleSignIn から決まる。初めはメールアドレスだけで始め、
+ *  Google のリダイレクト先の設定（docs/setup.md）を済ませてから true にする）。
+ */
+export const isGoogleSignInEnabled = envString(import.meta.env.VITE_GOOGLE_SIGN_IN) !== 'false';
+
 const firebaseOptions: FirebaseOptions = {
   apiKey: envString(import.meta.env.VITE_FIREBASE_API_KEY),
   authDomain: envString(import.meta.env.VITE_FIREBASE_AUTH_DOMAIN),

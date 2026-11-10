@@ -1,0 +1,15 @@
+{
+  "_説明": "秘密ではない設定です（公開されても困らない値だけ）。手順は docs/setup.md。鍵の JSON や VAPID の秘密鍵は絶対にここに書かないこと（GitHub の Secrets に登録する）。",
+  "firebase": {
+    "apiKey": "",
+    "authDomain": "",
+    "projectId": "",
+    "appId": "",
+    "messagingSenderId": ""
+  },
+  "vapidPublicKey": "",
+  "vapidSubject": "",
+  "notifyGroupIds": "",
+  "googleSignIn": false,
+  "googleBooksApiKey": ""
+}

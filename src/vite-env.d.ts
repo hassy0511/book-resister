@@ -9,6 +9,8 @@ interface ImportMetaEnv {
   readonly VITE_FIREBASE_MESSAGING_SENDER_ID?: string;
   readonly VITE_VAPID_PUBLIC_KEY?: string;
   readonly VITE_GOOGLE_BOOKS_API_KEY?: string;
+  /** 'false' のときは「Google でログイン」を出さない */
+  readonly VITE_GOOGLE_SIGN_IN?: string;
   readonly VITE_USE_EMULATORS?: string;
   /** vite.config.ts が package.json の version を入れる */
   readonly VITE_APP_VERSION?: string;

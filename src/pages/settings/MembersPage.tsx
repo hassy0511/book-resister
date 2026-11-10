@@ -252,6 +252,34 @@ export default function MembersPage() {
         </ListGroup>
       </section>
 
+      <section className={styles.inviteSection} aria-labelledby="group-id-title">
+        <h2 id="group-id-title" className={styles.sectionTitle}>
+          グループ ID
+        </h2>
+        <Card>
+          <p className={styles.inviteText}>
+            毎朝の返却日の通知を、このグループに送るための設定に使います（手順書 docs/setup.md の手順 9）。
+          </p>
+          <p className={styles.groupId} data-testid="group-id">
+            {groupId}
+          </p>
+          <Button
+            variant="secondary"
+            block
+            icon={<CopyIcon />}
+            onClick={() =>
+              void copyText(groupId).then((ok) =>
+                toast.show(ok ? 'グループ ID をコピーしました。' : 'コピーできませんでした。ID を長押しして選んでください。', {
+                  tone: ok ? 'success' : 'error',
+                }),
+              )
+            }
+          >
+            グループ ID をコピーする
+          </Button>
+        </Card>
+      </section>
+
       <ConfirmDialog
         open={confirm?.kind === 'revoke'}
         title="これまでの招待リンクをすべて無効にしますか？"

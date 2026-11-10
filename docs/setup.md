@@ -3,33 +3,50 @@
 このアプリ（かりた本ノート）を自分の家族用に動かすまでの手順です。上から順番に進めてください。
 **費用は一切かかりません。** クレジットカードの登録も不要です（Firebase は無料の Spark プランのまま使います）。
 
-所要時間の目安: 1〜2 時間（初めての場合）
+所要時間の目安: 1 時間くらい（初めての場合）
 
 > 用意するもの
 >
-> - Google アカウント（Firebase を作る人のもの。家族のアカウントとは別でも同じでもよい）
+> - Google アカウント（Gmail のアカウント。Firebase を作る人のもの）
 > - GitHub アカウントと、このアプリのリポジトリ（**非公開（Private）にしておく**。理由は手順 13 を参照）
-> - パソコン（手順 5 だけ。無い場合の代わりの方法も書いてあります）
+> - ブラウザ（**パソコンがあるとずっと楽です**。手順 1〜7 は iPhone の Safari でもできますが、画面が狭く操作しにくい）
 > - 家族の iPhone（iOS 16.4 以上）
+>
+> **パソコンにプログラムを入れる必要はありません。** すべてブラウザの中で行います。
 
 以下、`<project>` と書いてあるところは、自分の Firebase プロジェクト ID（例: `karita-hon-1a2b3`）に読み替えてください。
+
+---
+
+## 全体の流れ
+
+| 手順 | どこで | やること |
+|---|---|---|
+| 1〜4 | Firebase のサイト | プロジェクト・ログイン方法・データベースを作り、アプリの設定値をコピーする |
+| 5 | Google Cloud の Cloud Shell（ブラウザの中の黒い画面） | 用意したコマンドを貼り付けて、鍵を作る |
+| 6 | GitHub のサイト | 手順 5 でできた秘密の値を 3 つ登録する |
+| 7 | GitHub のサイト | 公開（デプロイ）する |
+| 8〜10 | iPhone | ホーム画面に追加し、家族を招待して、通知を確かめる |
+
+設定値は、リポジトリの **`app.config.json`** というファイルに書き込みます（公開されても困らない値だけ）。
+Claude（このアプリを作った AI）とやり取りしている場合は、値を Claude に送れば書き込んでもらえます。自分で書き込む方法も各手順に書いてあります。
 
 ---
 
 ## 目次
 
 1. [Firebase プロジェクトを作る](#1-firebase-プロジェクトを作る)
-2. [ログイン方法（Authentication）を設定する](#2-ログイン方法authenticationを設定する)
+2. [ログイン方法を設定する](#2-ログイン方法を設定する)
 3. [データベース（Firestore）を作る](#3-データベースfirestoreを作る)
-4. [ウェブアプリを登録して設定値を控える](#4-ウェブアプリを登録して設定値を控える)
-5. [通知用の鍵（VAPID 鍵）を作る](#5-通知用の鍵vapid-鍵を作る)
-6. [デプロイ用と通知用のサービスアカウント鍵を作る](#6-デプロイ用と通知用のサービスアカウント鍵を作る)
-7. [GitHub に Secrets と Variables を登録する](#7-github-に-secrets-と-variables-を登録する)
-8. [main にマージしてデプロイする](#8-main-にマージしてデプロイする)
-9. [iPhone のホーム画面に追加して通知をオンにする](#9-iphone-のホーム画面に追加して通知をオンにする)
-10. [家族を招待する](#10-家族を招待する)
-11. [（任意）Google Books API キーを作る](#11-任意google-books-api-キーを作る)
-12. [通知の動作を確認する](#12-通知の動作を確認する)
+4. [ウェブアプリを登録して、設定値をコピーする](#4-ウェブアプリを登録して設定値をコピーする)
+5. [Cloud Shell で鍵を作る](#5-cloud-shell-で鍵を作る)
+6. [GitHub に秘密の値を 3 つ登録する](#6-github-に秘密の値を-3-つ登録する)
+7. [公開（デプロイ）する](#7-公開デプロイする)
+8. [iPhone のホーム画面に追加して通知をオンにする](#8-iphone-のホーム画面に追加して通知をオンにする)
+9. [家族を招待して、通知を送るグループを登録する](#9-家族を招待して通知を送るグループを登録する)
+10. [通知の動作を確認する](#10-通知の動作を確認する)
+11. [（任意）Google アカウントでもログインできるようにする](#11-任意google-アカウントでもログインできるようにする)
+12. [（任意）Google Books API キーを作る](#12-任意google-books-api-キーを作る)
 13. [無料枠の目安とトラブルシュート](#13-無料枠の目安とトラブルシュート)
 14. [（開発者向け）ローカルでの開発](#14-開発者向けローカルでの開発)
 
@@ -37,224 +54,228 @@
 
 ## 1. Firebase プロジェクトを作る
 
-1. パソコンかスマホのブラウザで <https://console.firebase.google.com/> を開き、Google アカウントでログインします。
+1. ブラウザで <https://console.firebase.google.com/> を開き、Google アカウントでログインします。
 2. 「**プロジェクトを作成**」（または「Firebase プロジェクトを使ってみる」）を押します。
-3. プロジェクト名を入力します（例: `karita-hon`）。名前の下に表示される **プロジェクト ID**（例: `karita-hon-1a2b3`）を控えておきます。これが `<project>` です。
+3. プロジェクト名を入力します（例: `karita-hon`）。名前の下に小さく表示される **プロジェクト ID**（例: `karita-hon-1a2b3`）をメモしておきます。これが `<project>` です。
    - アプリの URL は `https://<project>.web.app` になります。
-4. 「Google アナリティクス」は**オフ**で構いません（使いません）。
+4. 途中で聞かれる「Gemini」や「Google アナリティクス」は**オフ**で構いません（使いません）。
 5. 「プロジェクトを作成」を押し、完了するまで待ちます。
 
-> **料金プランは「Spark（無料）」のままにしてください。** 「Blaze にアップグレード」と表示されても押さないでください。このアプリは Spark プランだけで動くように作られています。
+> **料金プランは「Spark（無料）」のままにしてください。** 「Blaze にアップグレード」と表示されても押さないでください。
 
-## 2. ログイン方法（Authentication）を設定する
+## 2. ログイン方法を設定する
 
-1. 左のメニューの「**構築**」→「**Authentication**」を開き、「始める」を押します。
-2. 「**Sign-in method**（ログイン方法）」タブで、次の 2 つを有効にします。
-   - **Google**: 「Google」を選び、「有効にする」をオン。「プロジェクトのサポートメール」に自分のメールアドレスを選んで「保存」。
-   - **メール / パスワード**: 「メール / パスワード」を選び、1 つ目のスイッチ（メール / パスワード）だけをオンにして「保存」。
-     （2 つ目の「メールリンク（パスワードなしでログイン）」はオフのままで構いません）
-3. 「**設定**」タブ →「**承認済みドメイン**」を開き、次のドメインが入っていることを確認します（通常は最初から入っています）。
-   - `localhost`
-   - `<project>.firebaseapp.com`
-   - `<project>.web.app`
+最初は**メールアドレスとパスワードでのログインだけ**を使います（Google アカウントでのログインは設定が多いので、必要になったら手順 11 で追加します）。
 
-   無ければ「ドメインの追加」で追加してください。
+1. 左のメニューの「**構築**」（または「Build」）→「**Authentication**」を開き、「**始める**」を押します。
+2. 「**Sign-in method**（ログイン方法）」タブで「**メール / パスワード**」を選びます。
+3. 1 つ目のスイッチ（メール / パスワード）だけを**オン**にして「**保存**」を押します（2 つ目の「メールリンク」はオフのまま）。
 
 ## 3. データベース（Firestore）を作る
 
 1. 左のメニューの「**構築**」→「**Firestore Database**」を開き、「**データベースを作成**」を押します。
 2. エディションを聞かれたら「**Standard**」を選びます。
-3. ロケーション（データを置く場所）は **`asia-northeast1`（東京）** を選びます。
+3. ロケーション（データを置く場所）は **`asia-northeast1`（Tokyo）** を選びます。
    - **ロケーションは後から変更できません。** 間違えた場合はプロジェクトを作り直すことになります。
 4. セキュリティルールは「**本番環境モード**」を選んで「作成」を押します。
-   - 本番環境モードでは最初はすべてのアクセスが拒否されます。アプリ用のルール（`firestore.rules`）は、手順 8 のデプロイで自動的に設定されます。
+   - 最初はすべてのアクセスが拒否されますが、それで正しい状態です。アプリ用のルールは手順 7 の公開で自動的に入ります。
 
-## 4. ウェブアプリを登録して設定値を控える
+## 4. ウェブアプリを登録して、設定値をコピーする
 
-1. 左上の歯車アイコン →「**プロジェクトの設定**」を開きます。
-2. 「全般」タブの下の方、「マイアプリ」で **`</>`（ウェブ）** のアイコンを押します。
-3. アプリのニックネーム（例: `かりた本ノート`）を入力します。
-   「このアプリの Firebase Hosting も設定します」には**チェックしなくて構いません**（GitHub Actions からデプロイするため）。
-4. 「アプリを登録」を押すと、次のような設定（`firebaseConfig`）が表示されます。値を控えておきます（後から「プロジェクトの設定」でいつでも見られます）。
+ここでは「このプロジェクトをウェブのアプリから使います」と Firebase に登録し、アプリが Firebase につながるための値（設定値）を受け取ります。**設定値は秘密ではありません**（アプリの中に入っていて、誰でも見られるもの）。
+
+1. Firebase の画面の左上にある**歯車のアイコン** →「**プロジェクトの設定**」を押します。
+2. 「**全般**」タブを一番下までスクロールします。「**マイアプリ**」の欄に「アプリがありません」と出ていて、その下に丸いアイコンがいくつか並んでいます。
+3. その中の **`</>`** のアイコン（ウェブ）を押します。
+4. 「アプリのニックネーム」に `かりた本ノート` と入力します。
+5. 「**このアプリの Firebase Hosting も設定します**」に**チェックを入れます**（アプリを公開する場所が用意されます）。
+6. 「**アプリを登録**」を押します。
+7. 次の画面に、次のような文字のかたまりが表示されます。**`const firebaseConfig = {` から `};` までをまるごとコピー**します。
 
    ```js
    const firebaseConfig = {
-     apiKey: "AIza....",               // → VITE_FIREBASE_API_KEY
+     apiKey: "AIza....",
      authDomain: "<project>.firebaseapp.com",
-     projectId: "<project>",           // → VITE_FIREBASE_PROJECT_ID
-     storageBucket: "...",             // 使いません
-     messagingSenderId: "1234567890",  // → VITE_FIREBASE_MESSAGING_SENDER_ID
-     appId: "1:1234567890:web:abcd..." // → VITE_FIREBASE_APP_ID
+     projectId: "<project>",
+     storageBucket: "<project>.firebasestorage.app",
+     messagingSenderId: "1234567890",
+     appId: "1:1234567890:web:abcd..."
    };
    ```
 
-5. **`authDomain` は表示された `<project>.firebaseapp.com` ではなく、`<project>.web.app` を使ってください。**（→ `VITE_FIREBASE_AUTH_DOMAIN`）
+8. コピーしたものを **Claude に送ります**（メモ帳などに貼っておいても構いません）。
+9. 画面の「次へ」を何回か押し（「Firebase CLI のインストール」などの説明は**読み飛ばして構いません**。何もインストールしません）、最後に「**コンソールに進む**」を押します。
 
-   > **理由:** iPhone の Safari は、別のドメインのサイトがデータを保存することを制限しています（トラッキング防止）。ログイン処理を行うドメイン（authDomain）がアプリの URL（`<project>.web.app`）と違うと、ホーム画面に追加したアプリで Google ログインの後に画面が戻ってこない・ログイン状態が保存されない、といった問題が起きやすくなります。authDomain をアプリと同じドメインにすると、ログイン処理が「同じサイト内」の扱いになり安定します。
+> **見失ったときは:** 歯車 →「プロジェクトの設定」→「全般」の一番下、「マイアプリ」の「かりた本ノート」を選び、「SDK の設定と構成」で「**構成**（Config）」を選ぶと、同じものがいつでも表示されます。
 
-6. authDomain を変えたので、Google ログインの「リダイレクト先」を 1 つ追加します。
-   1. <https://console.cloud.google.com/apis/credentials> を開き、画面上部のプロジェクト選択で自分のプロジェクト（`<project>`）を選びます。
-   2. 「OAuth 2.0 クライアント ID」の一覧にある「**Web client (auto created by Google Service)**」を開きます。
-   3. 「**承認済みのリダイレクト URI**」に「URI を追加」で次を追加して「保存」します。
+> **自分で書き込む場合:** GitHub のリポジトリで `app.config.json` を開き、鉛筆のアイコン（Edit this file）を押して、`"firebase"` の中の `apiKey`・`projectId`・`appId`・`messagingSenderId` の `""` の間に値を入れて「Commit changes」を押します。`authDomain` は空のままにします（自動で `<project>.web.app` になります）。
 
-      ```
-      https://<project>.web.app/__/auth/handler
-      ```
+## 5. Cloud Shell で鍵を作る
 
-      （`https://<project>.firebaseapp.com/__/auth/handler` は最初から入っているはずです。消さずに残しておきます）
-   4. 反映まで数分〜数十分かかることがあります。
+アプリの公開と毎朝の通知に使う「鍵」を作ります。ふつうは何十回もクリックが必要な作業ですが、**用意したコマンドを 1 回貼り付けるだけ**で済むようにしてあります。
 
-## 5. 通知用の鍵（VAPID 鍵）を作る
+使うのは **Cloud Shell**（Google が無料で用意している、ブラウザの中で動く黒い画面）です。
 
-プッシュ通知を送るための鍵のペア（公開鍵と秘密鍵）を作ります。**一度作ったら変えない**でください（変えると全員が通知をオンにし直す必要があります）。
+1. ブラウザで <https://console.cloud.google.com/> を開きます（Firebase と同じ Google アカウント）。
+2. 画面の一番上の「プロジェクトを選択」の欄で、手順 1 で作ったプロジェクト（`karita-hon` など）を選びます。
+3. 画面の右上にある **`>_` の形のアイコン**（「Cloud Shell をアクティブにする」）を押します。
+   - 画面の下半分に黒い画面が開きます。初めてのときは「続行」を押します。準備に 1 分ほどかかります。
+4. 黒い画面に `あなたの名前@cloudshell:~` のような文字が出たら、下のコマンドを**全部コピーして黒い画面に貼り付け**、**Enter** を押します。
+   - 貼り付けは、黒い画面を右クリック →「貼り付け」、または `Ctrl`＋`V`（Mac は `⌘`＋`V`）です。
+   - 「複数行を貼り付けますか」と聞かれたら「貼り付け」を押します。
 
-### パソコンがある場合
+   ```bash
+   karita_setup() {
+     local PROJECT_ID=""
+     read -r -p "Firebase のプロジェクト ID を入力して Enter: " PROJECT_ID
+     PROJECT_ID="$(printf '%s' "$PROJECT_ID" | tr -d '[:space:]')"
+     local out="$HOME/karita-setup"
+     local deploy_sa="github-actions@${PROJECT_ID}.iam.gserviceaccount.com"
+     local notify_sa="notify-bot@${PROJECT_ID}.iam.gserviceaccount.com"
+   
+     if [ -z "$PROJECT_ID" ]; then
+       echo "!! プロジェクト ID が空です。もう一度「karita_setup」と入力して Enter を押してください。"
+       return 1
+     fi
+     echo "== 1/5 プロジェクトを選んでいます: $PROJECT_ID"
+     gcloud config set project "$PROJECT_ID" >/dev/null 2>&1 || {
+       echo "!! プロジェクト「$PROJECT_ID」を選べませんでした。プロジェクト ID（表示名ではありません）を確かめてください。"
+       return 1
+     }
+     if ! gcloud projects describe "$PROJECT_ID" >/dev/null 2>&1; then
+       echo "!! プロジェクト「$PROJECT_ID」が見つかりません。プロジェクト ID（表示名ではありません）を確かめて、"
+       echo "   もう一度「karita_setup」と入力して Enter を押してください。"
+       return 1
+     fi
+   
+     echo "== 2/5 必要な機能を有効にしています（1〜2 分かかることがあります）"
+     gcloud services enable firebasehosting.googleapis.com firebaserules.googleapis.com \
+       firestore.googleapis.com iam.googleapis.com || { echo "!! 機能を有効にできませんでした。"; return 1; }
+   
+     echo "== 3/5 ロボット用アカウントを作っています"
+     gcloud iam service-accounts describe "$deploy_sa" >/dev/null 2>&1 ||
+       gcloud iam service-accounts create github-actions --display-name="アプリの公開用" >/dev/null ||
+       { echo "!! github-actions を作れませんでした。"; return 1; }
+     gcloud iam service-accounts describe "$notify_sa" >/dev/null 2>&1 ||
+       gcloud iam service-accounts create notify-bot --display-name="返却日の通知用" >/dev/null ||
+       { echo "!! notify-bot を作れませんでした。"; return 1; }
+     sleep 15 # 作った直後は権限を付けられないことがあるので少し待つ
+   
+     echo "== 4/5 権限を付けています"
+     local role
+     for role in roles/firebasehosting.admin roles/firebaserules.admin roles/datastore.indexAdmin \
+       roles/datastore.user roles/serviceusage.serviceUsageConsumer; do
+       gcloud projects add-iam-policy-binding "$PROJECT_ID" --member="serviceAccount:$deploy_sa" \
+         --role="$role" --condition=None --quiet >/dev/null || { echo "!! 権限 $role を付けられませんでした。"; return 1; }
+     done
+     gcloud projects add-iam-policy-binding "$PROJECT_ID" --member="serviceAccount:$notify_sa" \
+       --role=roles/datastore.user --condition=None --quiet >/dev/null ||
+       { echo "!! 通知用の権限を付けられませんでした。"; return 1; }
+   
+     echo "== 5/5 鍵を作っています"
+     mkdir -p "$out" && chmod 700 "$out"
+     rm -f "$out"/*
+     gcloud iam service-accounts keys create "$out/1_FIREBASE_SERVICE_ACCOUNT.json" --iam-account="$deploy_sa" >/dev/null 2>&1 ||
+       { echo "!! デプロイ用の鍵を作れませんでした。"; return 1; }
+     gcloud iam service-accounts keys create "$out/2_NOTIFY_SERVICE_ACCOUNT.json" --iam-account="$notify_sa" >/dev/null 2>&1 ||
+       { echo "!! 通知用の鍵を作れませんでした。"; return 1; }
+     npx -y web-push@3 generate-vapid-keys --json >"$out/vapid.json" 2>/dev/null ||
+       { echo "!! 通知用の鍵のペア（VAPID）を作れませんでした。"; return 1; }
+     node -e '
+       const fs = require("fs");
+       const dir = process.argv[1];
+       const v = JSON.parse(fs.readFileSync(dir + "/vapid.json", "utf8"));
+       fs.writeFileSync(dir + "/3_VAPID_PRIVATE_KEY.txt", v.privateKey);
+       fs.writeFileSync(dir + "/claude_ni_okuru_koukaikagi.txt", v.publicKey);
+       fs.unlinkSync(dir + "/vapid.json");
+     ' "$out" || { echo "!! VAPID 鍵を保存できませんでした。"; return 1; }
+     chmod 600 "$out"/*
+   
+     echo
+     echo "========================================================================"
+     echo " できました。上のエディタに 4 つのファイルが開いています（~/karita-setup/）。"
+     echo "   1_FIREBASE_SERVICE_ACCOUNT.json  → GitHub の Secrets「FIREBASE_SERVICE_ACCOUNT」"
+     echo "   2_NOTIFY_SERVICE_ACCOUNT.json    → GitHub の Secrets「NOTIFY_SERVICE_ACCOUNT」"
+     echo "   3_VAPID_PRIVATE_KEY.txt          → GitHub の Secrets「VAPID_PRIVATE_KEY」"
+     echo "   claude_ni_okuru_koukaikagi.txt   → 中身を Claude に送る（公開してよい値）"
+     echo " 1〜3 は秘密の値です。GitHub 以外には貼らないでください。"
+     echo " 登録が終わったら、次のコマンドで消してください:  rm -rf ~/karita-setup"
+     echo "========================================================================"
+     echo
+     echo "Claude に送る公開鍵:"
+     cat "$out/claude_ni_okuru_koukaikagi.txt"
+     echo
+     if command -v cloudshell >/dev/null 2>&1; then
+       cloudshell edit "$out/claude_ni_okuru_koukaikagi.txt"
+       cloudshell edit "$out/3_VAPID_PRIVATE_KEY.txt"
+       cloudshell edit "$out/2_NOTIFY_SERVICE_ACCOUNT.json"
+       cloudshell edit "$out/1_FIREBASE_SERVICE_ACCOUNT.json"
+     fi
+   }
+   
+   karita_setup
+   ```
 
-[Node.js](https://nodejs.org/ja)（LTS 版）をインストールし、リポジトリを取得したフォルダで次を実行します。
+5. `Firebase のプロジェクト ID を入力して Enter:` と出たら、手順 1 でメモしたプロジェクト ID（例: `karita-hon-1a2b3`）を入力して **Enter** を押します。
+   - 「Cloud Shell の承認」という確認が出たら「**承認**」を押します。
+6. `== 1/5` から `== 5/5` まで順に進み（2〜3 分）、最後に「**できました**」と表示されれば成功です。
+   画面の上半分にエディタが開き、次の 4 つのファイルがタブで並んでいます（`karita-setup` というフォルダの中）。
 
-```sh
-npm ci
-npm run gen:vapid
-```
+   | ファイル | 中身 | どうするか |
+   |---|---|---|
+   | `1_FIREBASE_SERVICE_ACCOUNT.json` | 公開用の鍵 | 手順 6 で GitHub に登録する（**秘密**） |
+   | `2_NOTIFY_SERVICE_ACCOUNT.json` | 通知用の鍵 | 手順 6 で GitHub に登録する（**秘密**） |
+   | `3_VAPID_PRIVATE_KEY.txt` | 通知の秘密鍵 | 手順 6 で GitHub に登録する（**秘密**） |
+   | `claude_ni_okuru_koukaikagi.txt` | 通知の公開鍵 | **Claude に送る**（秘密ではない。黒い画面の最後にも表示されています） |
 
-次のように表示されます。
+   > **自分で書き込む場合:** 公開鍵は `app.config.json` の `"vapidPublicKey": ""` の `""` の間に入れます。
 
-```
-=======================================
-Public Key:
-BNx....（長い文字列）
-Private Key:
-Q3y....（短めの文字列）
-=======================================
-```
+7. **Cloud Shell のタブは、手順 6 が終わるまで閉じないでください**（閉じてしまっても、Cloud Shell を開き直して左のファイル一覧の `karita-setup` から開けます）。
 
-- **Public Key**（公開鍵）→ GitHub の Variables `VITE_VAPID_PUBLIC_KEY` と `VAPID_PUBLIC_KEY` の**両方**に同じ値を入れます。
-- **Private Key**（秘密鍵）→ GitHub の Secrets `VAPID_PRIVATE_KEY` に入れます。**他の人に見せたり、ファイルに保存してリポジトリに入れたりしないでください。**
+> **うまくいかないとき:** `!!` で始まる行に理由が出ます。
+> - 「プロジェクト … が見つかりません」→ 表示名（`karita-hon`）ではなく、ID（`karita-hon-1a2b3` のように後ろに英数字が付いたもの）を入力します。黒い画面に `karita_setup` と入力して Enter を押すと、もう一度聞かれます。
+> - 「権限 … を付けられませんでした」→ 数分待ってから、黒い画面に `karita_setup` と入力して Enter を押します（何度やり直しても構いません）。
+> - それでもだめなときは、黒い画面に出た文字をそのまま Claude に送ってください（**鍵の中身は送らない**でください）。
 
-### パソコンが無い場合
+## 6. GitHub に秘密の値を 3 つ登録する
 
-GitHub のリポジトリのページで「**Code**」→「**Codespaces**」→「**Create codespace on main**」を押すと、ブラウザ上で動く開発環境が開きます（個人アカウントには毎月の無料枠があります）。下のターミナルで上と同じ `npm ci` と `npm run gen:vapid` を実行してください。終わったら Codespace は削除して構いません（<https://github.com/codespaces> から削除できます）。
+手順 5 でできた 3 つのファイルの中身を、GitHub に「秘密の値（Secrets）」として登録します。登録した値は、GitHub の自動処理（公開と毎朝の通知）だけが使い、あとから誰も（自分も）見ることはできません。
 
-## 6. デプロイ用と通知用のサービスアカウント鍵を作る
+1. 別のタブで GitHub のこのリポジトリのページを開きます。
+2. 上のメニューの「**Settings**」（歯車）→ 左のメニューの「**Secrets and variables**」→「**Actions**」を押します。
+3. 「**Secrets**」タブが選ばれていることを確かめ、緑の「**New repository secret**」を押します。
+4. 次の表のとおり、1 つずつ登録します（3 回繰り返します）。
+   - 「**Name**」に名前を**そのまま**入力します（全部大文字・`_` の位置も同じ）。
+   - Cloud Shell のエディタでそのファイルのタブを開き、中身をすべて選んで（`Ctrl`＋`A`、Mac は `⌘`＋`A`）コピーし、「**Secret**」の欄に貼り付けます。
+   - 「**Add secret**」を押します。
 
-GitHub Actions が使う「ロボット用アカウント（サービスアカウント）」と、その鍵を **2 つ**作ります。
+   | Name | Secret に貼り付けるもの |
+   |---|---|
+   | `FIREBASE_SERVICE_ACCOUNT` | `1_FIREBASE_SERVICE_ACCOUNT.json` の中身すべて（`{` から `}` まで） |
+   | `NOTIFY_SERVICE_ACCOUNT` | `2_NOTIFY_SERVICE_ACCOUNT.json` の中身すべて（`{` から `}` まで） |
+   | `VAPID_PRIVATE_KEY` | `3_VAPID_PRIVATE_KEY.txt` の中身（1 行） |
 
-| サービスアカウント | 使う場面 | 登録先（手順 7 の Secrets） |
-|---|---|---|
-| `github-actions`（デプロイ用） | アプリの公開（デプロイ）。ルールやアプリ本体を書き換えられる強い権限を持つ | `FIREBASE_SERVICE_ACCOUNT` |
-| `notify-bot`（通知用） | 毎朝の通知で Firestore を読む・古い通知先を消す。データの読み書きの権限だけ | `NOTIFY_SERVICE_ACCOUNT` |
+5. 3 つが一覧に並んだら完了です。Cloud Shell の黒い画面に次を入力して Enter を押し、鍵のファイルを消しておきます。
 
-> 分けておくと、毎日動く通知のプログラムから万一鍵が漏れても、アプリ本体やセキュリティルールを書き換えられることはありません。
+   ```bash
+   rm -rf ~/karita-setup
+   ```
 
-### 6-1. サービスアカウントを作る
+> **鍵はパスワードと同じです。** GitHub の Secrets 以外（チャット・メール・Claude など）には貼らないでください。もし漏らしてしまったら、Cloud Shell で `karita_setup` をもう一度実行して新しい鍵を作り、GitHub に登録し直してから、Google Cloud の「IAM と管理」→「サービス アカウント」→ 各アカウントの「鍵」タブで古い鍵を削除します（そのときは通知の公開鍵も変わるので、新しい公開鍵を Claude に送り、全員が通知をオンにし直します）。
 
-1. <https://console.cloud.google.com/iam-admin/serviceaccounts> を開き、上部で自分のプロジェクトを選びます。
-2. 「**＋ サービス アカウントを作成**」を押します。
-3. 名前に `github-actions` と入力して「作成して続行」を押します。
-4. 「ロールを選択」で、次のロールを**すべて**追加します（「別のロールを追加」で 1 つずつ追加。検索欄にロール名の一部を入れると見つけやすいです）。
+> Variables（Secrets の隣のタブ）には何も登録しなくて構いません（設定は `app.config.json` に書きます）。
 
-   | 画面の表示名（日本語） | 英語名 | ロール ID | 何に使うか |
-   |---|---|---|---|
-   | Firebase Hosting 管理者 | Firebase Hosting Admin | `roles/firebasehosting.admin` | アプリの公開 |
-   | Firebase ルール管理者 | Firebase Rules Admin | `roles/firebaserules.admin` | セキュリティルールの反映 |
-   | Cloud Datastore インデックス管理者 | Cloud Datastore Index Admin | `roles/datastore.indexAdmin` | インデックス設定の反映 |
-   | Cloud Datastore ユーザー | Cloud Datastore User | `roles/datastore.user` | デプロイ時のデータベースの確認 |
-   | Service Usage ユーザー | Service Usage Consumer | `roles/serviceusage.serviceUsageConsumer` | デプロイ前の API 有効化の確認 |
+## 7. 公開（デプロイ）する
 
-   表示名は画面の言語やバージョンで少し違うことがあります。見つからないときは英語名で検索してください。
+1. 手順 4 と手順 5 の値（設定値と公開鍵）が `app.config.json` に入ったことを確かめます（Claude に送った場合は、Claude が書き込んで知らせてくれます）。
+2. その変更を **`main` ブランチに取り込みます。** Claude がプルリクエスト（変更の取り込みのお願い）を作った場合は、GitHub でそのプルリクエストを開き、下の方の緑の「**Merge pull request**」→「**Confirm merge**」を押します。
+3. 上のメニューの「**Actions**」を押すと、「**デプロイ**」が動いているのが見えます（黄色い丸）。5 分前後で**緑のチェック**になれば完了です。
+   - デプロイの前にテストを行い、1 つでも失敗したら公開しません（公開中のアプリは前のまま）。
+   - 赤い × になったときは、その行を押して開き、赤くなっている手順を開いて、表示された文字を Claude に送ってください（よくある原因は手順 13 のトラブルシュート）。
+   - 設定を直した後に、変更なしでやり直すときは「Actions」→ 左の「デプロイ」→「**Run workflow**」→ 緑の「Run workflow」を押します。
+4. ブラウザで `https://<project>.web.app` を開き、ログイン画面が出れば成功です。
 
-5. 「完了」を押します。
-
-> **ロールの追加がうまくいかないときの確実な方法（Cloud Shell）**
->
-> Google Cloud コンソール右上の「Cloud Shell をアクティブにする」（`>_` のアイコン）を押すと、ブラウザ内でコマンドを実行できます（無料）。次を貼り付けて実行すると、サービスアカウントの作成とロールの追加をまとめて行えます（1 行目の `<project>` は自分のプロジェクト ID に置き換えます）。
->
-> ```sh
-> PROJECT_ID=<project>
-> SA="github-actions@${PROJECT_ID}.iam.gserviceaccount.com"
-> gcloud iam service-accounts create github-actions --display-name="GitHub Actions" --project="$PROJECT_ID"
-> for ROLE in roles/firebasehosting.admin roles/firebaserules.admin roles/datastore.indexAdmin \
->             roles/datastore.user roles/serviceusage.serviceUsageConsumer; do
->   gcloud projects add-iam-policy-binding "$PROJECT_ID" --member="serviceAccount:$SA" --role="$ROLE" --condition=None
-> done
-> ```
->
-> （すでに作成済みのときは 3 行目がエラーになりますが、続けて実行して構いません）
-
-### 6-2. 鍵（JSON ファイル）を作る
-
-1. サービスアカウントの一覧で `github-actions@<project>.iam.gserviceaccount.com` を押します。
-2. 「**鍵**」タブ →「**鍵を追加**」→「**新しい鍵を作成**」→「**JSON**」→「作成」。
-3. JSON ファイルがダウンロードされます。これを次の手順で GitHub の Secrets `FIREBASE_SERVICE_ACCOUNT` に**ファイルの中身をそのまま全部**貼り付けます。
-
-> **この JSON ファイルはパスワードと同じです。** 誰にも渡さず、リポジトリにも入れないでください。GitHub に登録したら、パソコンからは削除して構いません（必要になったら同じ手順で新しい鍵を作れます）。
-> 鍵が漏れたかもしれないときは、「鍵」タブでその鍵を削除し、新しい鍵を作って登録し直してください。
-
-### 6-3. 通知用のサービスアカウントと鍵を作る
-
-1. 6-1 と同じ画面で「**＋ サービス アカウントを作成**」を押し、名前に `notify-bot` と入力して「作成して続行」を押します。
-2. 「ロールを選択」で **Cloud Datastore ユーザー**（Cloud Datastore User、`roles/datastore.user`）**だけ**を追加して「完了」を押します（他のロールは付けません）。
-3. 6-2 と同じ手順で `notify-bot@<project>.iam.gserviceaccount.com` の鍵（JSON）を作ります。これは手順 7 の Secrets `NOTIFY_SERVICE_ACCOUNT` に貼り付けます（`FIREBASE_SERVICE_ACCOUNT` とは**別の**値です）。
-
-> **Cloud Shell で行う場合**（`<project>` は自分のプロジェクト ID に置き換えます）
->
-> ```sh
-> PROJECT_ID=<project>
-> SA="notify-bot@${PROJECT_ID}.iam.gserviceaccount.com"
-> gcloud iam service-accounts create notify-bot --display-name="返却日の通知" --project="$PROJECT_ID"
-> gcloud projects add-iam-policy-binding "$PROJECT_ID" --member="serviceAccount:$SA" --role=roles/datastore.user --condition=None
-> gcloud iam service-accounts keys create notify-bot.json --iam-account="$SA"
-> cat notify-bot.json   # 表示された中身（{ から } まで）を NOTIFY_SERVICE_ACCOUNT に貼り付ける
-> rm notify-bot.json
-> ```
-
-> **鍵は年に 1 回くらい作り直すと安心です。** 新しい鍵を作って GitHub に登録し直し、通知（手順 12 の dry run）とデプロイが動くことを確かめてから、古い鍵を「鍵」タブで削除します。
-> 通知のワークフローはデプロイ用の `FIREBASE_SERVICE_ACCOUNT` を使いません。`NOTIFY_SERVICE_ACCOUNT` が未登録だと、通知はエラーで止まります（強い権限を持つ鍵を毎朝の処理に渡さないため）。
-
-## 7. GitHub に Secrets と Variables を登録する
-
-GitHub のリポジトリのページで「**Settings**」→ 左メニューの「**Secrets and variables**」→「**Actions**」を開きます。
-
-### Secrets（秘密の値）
-
-「**Secrets**」タブ →「**New repository secret**」で 1 つずつ登録します。登録後は値を見ることはできません（上書きはできます）。
-
-| 名前 | 値 |
-|---|---|
-| `FIREBASE_SERVICE_ACCOUNT` | 手順 6-2 の `github-actions` の JSON ファイルの中身すべて（`{` から `}` まで）。デプロイに使う |
-| `NOTIFY_SERVICE_ACCOUNT` | 手順 6-3 の `notify-bot` の JSON ファイルの中身すべて。毎朝の通知に使う |
-| `VAPID_PRIVATE_KEY` | 手順 5 の Private Key |
-
-### Variables（公開してよい値）
-
-「**Variables**」タブ →「**New repository variable**」で 1 つずつ登録します。
-
-| 名前 | 値 | 例 |
-|---|---|---|
-| `VITE_FIREBASE_API_KEY` | 手順 4 の `apiKey` | `AIza...` |
-| `VITE_FIREBASE_AUTH_DOMAIN` | **`<project>.web.app`**（手順 4 の 5 を参照） | `karita-hon-1a2b3.web.app` |
-| `VITE_FIREBASE_PROJECT_ID` | 手順 4 の `projectId` | `karita-hon-1a2b3` |
-| `VITE_FIREBASE_APP_ID` | 手順 4 の `appId` | `1:1234567890:web:abcd...` |
-| `VITE_FIREBASE_MESSAGING_SENDER_ID` | 手順 4 の `messagingSenderId` | `1234567890` |
-| `VITE_VAPID_PUBLIC_KEY` | 手順 5 の Public Key | `BNx...` |
-| `VAPID_PUBLIC_KEY` | 手順 5 の Public Key（上と同じ値） | `BNx...` |
-| `VAPID_SUBJECT` | 通知の送り主の連絡先。`mailto:` の後に自分のメールアドレス | `mailto:taro@example.com` |
-| `APP_URL` | アプリの URL | `https://karita-hon-1a2b3.web.app` |
-| `NOTIFY_GROUP_IDS` | 通知を送る家族のグループの ID。グループを作った後に**手順 12** で登録する（それまでは登録しなくてよい） | `aB3dE5fG7hJ9kL1mN2pQ` |
-| `VITE_GOOGLE_BOOKS_API_KEY` | （任意）手順 11 で作る API キー。無ければ登録しなくてよい | `AIza...` |
-
-> Firebase の `apiKey` は秘密の値ではありません（アプリに埋め込まれて誰でも見られるもの）。データはセキュリティルールで守られています。
-
-## 8. main にマージしてデプロイする
-
-1. 変更を `main` ブランチにマージ（または push）すると、GitHub の「**Actions**」タブで「**デプロイ**」ワークフローが自動で動きます。
-   - 設定を登録した後に、何も変更せずにデプロイし直したいときは、「Actions」→ 左の一覧から「デプロイ」→「**Run workflow**」→「Run workflow」を押します。
-2. 緑のチェックマークが付けば完了です（5 分前後）。デプロイの前に、型チェック・単体テスト・セキュリティルールのテストを行います。赤い × が付いたときは、その実行を開き、赤くなっている手順のログを確認してください（よくある原因は手順 13 のトラブルシュートを参照）。
-3. ブラウザで `https://<project>.web.app` を開き、ログイン画面が出れば成功です。
-
-> デプロイの前にテスト（ルールのテストを含む）が行われ、**1 つでも失敗した場合はデプロイされません**（公開中のアプリとルールは前のまま）。手動の「Run workflow」でも同じです。同時に動く「CI」ワークフローも同じテストを行います（プルリクエストでも動きます）。
-
-## 9. iPhone のホーム画面に追加して通知をオンにする
+## 8. iPhone のホーム画面に追加して通知をオンにする
 
 通知（返却日のお知らせ）を受け取るには、**ホーム画面に追加したアプリ**から通知を許可する必要があります（iPhone の仕様です。iOS 16.4 以上が必要）。家族それぞれの iPhone で行ってください。
 
@@ -262,21 +283,22 @@ GitHub のリポジトリのページで「**Settings**」→ 左メニューの
 2. 画面下の **共有ボタン**（四角から上向き矢印が出ているアイコン）を押します。
 3. 一覧を下にスクロールして「**ホーム画面に追加**」を押し、右上の「追加」を押します。
 4. **ホーム画面に追加された「かりた本」アイコンから**アプリを開きます（以降は毎回ここから開きます）。
-5. Google またはメールアドレスでログインします。
+5. 「新規登録」を選び、メールアドレスとパスワード（6 文字以上）を入れて登録します。
 6. 最初の 1 人目は、グループの作成画面で表示名（例: ママ）とグループ名（例: 山田家）を入力します。続けて、よく使う場所（図書館など）と貸出期間を登録します。
 7. 画面下の「**設定**」タブ →「**返却日の通知**」を開き、「**通知をオンにする**」を押します。iPhone の確認画面が出たら「**許可**」を押します。
 8. 同じ画面の「**テスト通知を送る**」を押し、通知が表示されることを確認します。
 
 > 通知を一度「許可しない」にしてしまった場合は、iPhone の「設定」→「通知」→「かりた本」から通知をオンにしてください。
 
-## 10. 家族を招待する
+## 9. 家族を招待して、通知を送るグループを登録する
+
+### 家族を招待する
 
 1. 画面下の「**設定**」タブ →「**家族メンバーと招待**」で「**招待リンクを作る**」を押し、LINE やメッセージで家族に送ります（共有シートが出ないときは「共有する」か「コピーする」を押します）。
    - 招待リンクの有効期限は **7 日間** です。期限が切れたら新しいリンクを作ってください。
-2. 受け取った家族は、iPhone の **Safari** でリンクを開き、ログイン（Google かメールアドレス）して、画面の案内に従ってグループに参加します。
-   - Google アカウントを持っていない家族は、メールアドレスとパスワードで新規登録できます。
-   - 招待リンクには LINE で開いたときに Safari で開く設定（`?openExternalBrowser=1`）が付いています。LINE などのアプリの中の画面で開いてしまった場合（「〇〇 の中のブラウザで開いています」と表示されます）は、画面のメニュー（「…」など）から「**Safari で開く**」を選んでください。アプリの中の画面では Google でログインできず、ホーム画面にも追加できません。
-3. 参加したら、手順 9 の 2〜4 と 7〜8（ホーム画面に追加して通知をオン）を行ってもらいます。
+2. 受け取った家族は、iPhone の **Safari** でリンクを開き、メールアドレスで新規登録して、画面の案内に従ってグループに参加します。
+   - 招待リンクには LINE で開いたときに Safari で開く設定（`?openExternalBrowser=1`）が付いています。LINE などのアプリの中の画面で開いてしまった場合（「〇〇 の中のブラウザで開いています」と表示されます）は、画面のメニュー（「…」など）から「**Safari で開く**」を選んでください。アプリの中の画面ではホーム画面に追加できず、通知も受け取れません。
+3. 参加したら、手順 8 の 2〜4 と 7〜8（ホーム画面に追加して通知をオン）を行ってもらいます。
 
 > 招待リンクは、有効期限内なら**何人でも**使えます（家族の LINE グループに 1 本送れば全員が参加できるように）。家族以外には送らないでください。
 
@@ -290,7 +312,60 @@ GitHub のリポジトリのページで「**Settings**」→ 左メニューの
 
 > アプリを開けない場合の最後の手段: Firebase コンソールの「Firestore Database」→「データ」で、`invites` のうち `groupId` が自分のグループの ID のものをすべて削除し、**その後で** `groups` →（自分のグループ）→ `members` からその人のドキュメントを削除します（順番が逆だと、残っている招待リンクで戻られてしまいます）。
 
-## 11. （任意）Google Books API キーを作る
+### 通知を送るグループを登録する
+
+このアプリは誰でもアカウントを作ってグループを作れます。家族以外の人が作ったグループに毎朝の通知の処理をさせないよう、**家族のグループだけ**を登録します（登録しないと、すべてのグループを処理し、実行結果に黄色い警告が出ます。通知は届きます）。
+
+1. アプリの「**設定**」タブ →「**家族メンバーと招待**」の一番下に「**グループ ID**」（20 文字くらいの英数字）があります。「**グループ ID をコピーする**」を押します。
+2. コピーした ID を **Claude に送ります**。Claude が `app.config.json` に書き込みます。
+   > **自分で書き込む場合:** `app.config.json` の `"notifyGroupIds": ""` の `""` の間に ID を入れて「Commit changes」を押します。
+3. その変更が `main` に入れば完了です（手順 7 の 2 と同じ）。
+
+## 10. 通知の動作を確認する
+
+通知は GitHub の「**返却日の通知**」という自動処理が毎朝 8 時ごろ（日本時間 7:45 に起動）に送ります。次の本があるときだけ、グループ全員に 1 通届きます。
+
+- 返却日を過ぎている本（返却するまで毎朝）
+- 明日が返却日の本
+- 3 日後が返却日の本
+
+### 送らずに内容だけ確認する（dry run）
+
+1. GitHub の「**Actions**」→ 左の一覧から「**返却日の通知**」を選びます。
+2. 「**Run workflow**」を押し、「**送信せずに内容だけ表示する**」に**チェックを入れて**、緑の「Run workflow」を押します。
+3. 実行が終わったら開いて、「通知を送信」のログに、送る予定の内容と件数が表示されていることを確認します。
+   - 「通知するグループ: 1 件（NOTIFY_GROUP_IDS）」と自分のグループだけが出ていれば、手順 9 の登録もできています。
+
+### 実際に送ってみる
+
+1. アプリで、返却日を「明日」にして本を 1 冊借りた登録をします（テスト用。後で削除します）。
+2. 上と同じ手順で、今度は**チェックを入れずに**「Run workflow」を押します。
+3. 通知をオンにした iPhone に「明日返却：…」という通知が届けば成功です。
+4. テスト用の貸出は、ホームの一覧でその本をタップして貸出の詳細を開き、一番下の「**この登録を削除**」→「**削除する**」で消してください（本の詳細画面には削除はありません）。消し忘れると、翌々日から返却するまで毎朝「延滞中」の通知が家族全員に届きます。
+
+> GitHub の定期実行は混雑していると数分〜数十分遅れることがあります。8 時ちょうどに届かなくても異常ではありません。
+
+## 11. （任意）Google アカウントでもログインできるようにする
+
+メールアドレスでのログインに加えて、「Google でログイン」のボタンを出したいときだけ行います。
+
+1. Firebase の「**Authentication**」→「**Sign-in method**」で「**新しいプロバイダを追加**」→「**Google**」を選び、「有効にする」をオンにします。「プロジェクトのサポートメール」に自分のメールアドレスを選んで「保存」を押します。
+2. <https://console.cloud.google.com/apis/credentials> を開き、画面上部で自分のプロジェクトを選びます。
+3. 「OAuth 2.0 クライアント ID」の一覧にある「**Web client (auto created by Google Service)**」を押します。
+4. 「**承認済みのリダイレクト URI**」の「**URI を追加**」を押し、次を入力して「**保存**」を押します（`<project>` は自分のプロジェクト ID）。
+
+   ```text
+   https://<project>.web.app/__/auth/handler
+   ```
+
+   （`https://<project>.firebaseapp.com/__/auth/handler` は最初から入っています。消さずに残します）
+
+5. Firebase の「Authentication」→「**設定**」→「**承認済みドメイン**」に `<project>.web.app` があることを確かめます（無ければ「ドメインの追加」で追加）。
+6. Claude に「Google ログインを有効にして」と伝えます（`app.config.json` の `"googleSignIn": false` を `true` にします）。`main` に入ると、ログイン画面に「Google でログイン」が出ます。反映まで数分〜数十分かかることがあります。
+
+> **なぜアプリと同じドメイン（`<project>.web.app`）でログインするのか:** iPhone の Safari は、別のドメインのサイトがデータを保存することを制限しています（トラッキング防止）。ログインの処理を行うドメインがアプリの URL と違うと、ホーム画面のアプリで Google ログインの後に画面が戻ってこないことがあります。このアプリは自動でアプリと同じドメインを使うようにしてあり、手順 4 はそのための設定です。
+
+## 12. （任意）Google Books API キーを作る
 
 本の情報（タイトル・表紙など）は、まず openBD と国立国会図書館サーチから探し、見つからないときに Google Books を使います。Google Books は API キーが無くても使えますが、利用者全体で共有の上限に当たりやすいため、キーを作っておくと安定します。**無料**です（請求先アカウントの登録も不要です）。
 
@@ -302,46 +377,8 @@ GitHub のリポジトリのページで「**Settings**」→ 左メニューの
      - `https://<project>.firebaseapp.com/*`
      - （ローカル開発もする場合）`http://localhost:5173/*`
    - **API の制限**: 「キーを制限」を選び、「**Books API**」だけにチェック。
-4. GitHub の Variables に `VITE_GOOGLE_BOOKS_API_KEY` として登録し、手順 8 の方法でデプロイし直します。
+4. キーを Claude に送るか、`app.config.json` の `"googleBooksApiKey": ""` に入れて、`main` に取り込みます（制限をかけたキーは、アプリの中に入る公開の値として扱って構いません）。
 
-## 12. 通知の動作を確認する
-
-通知は GitHub Actions の「**返却日の通知**」ワークフローが毎朝 8 時ごろ（日本時間 7:45 に起動）に送ります。次の本があるときだけ、グループ全員に 1 通届きます。
-
-- 返却日を過ぎている本（返却するまで毎朝）
-- 明日が返却日の本
-- 3 日後が返却日の本
-
-### 送らずに内容だけ確認する（dry run）
-
-1. GitHub の「**Actions**」→ 左の一覧から「**返却日の通知**」を選びます。
-2. 「**Run workflow**」を押し、「**送信せずに内容だけ表示する**」に**チェックを入れて**「Run workflow」を押します。
-3. 実行が終わったら開いて、「通知を送信」のログに、送る予定の内容と件数が表示されていることを確認します。
-
-### 通知を送るグループを登録する（NOTIFY_GROUP_IDS）
-
-このアプリは誰でもアカウントを作ってグループを作れます。家族以外の人が作ったグループに通知の処理をさせないよう、**家族のグループだけ**を登録します（登録しないと、すべてのグループを処理し、実行結果に黄色い警告が出ます）。
-
-1. 手順 9 でグループを作った後に、上の dry run を実行します。
-2. 「通知を送信」のログに、次のような行があります。`[` と `]` の間の英数字（20 文字くらい）がグループの ID です。
-
-   ```text
-   [aB3dE5fG7hJ9kL1mN2pQ] グループ「山田家」
-   ```
-
-   自分のグループ名の行の ID をコピーします（他のグループの行があっても、それは家族のものではないので使いません）。
-   > Firebase コンソールの「Firestore Database」→「データ」→ `groups` でも、`name` が自分のグループ名になっているドキュメントの ID として確認できます。
-3. GitHub の「Settings」→「Secrets and variables」→「Actions」→「**Variables**」で、`NOTIFY_GROUP_IDS` にその ID を登録します（複数あるときはカンマ `,` で区切ります）。
-4. もう一度 dry run を実行し、ログに「通知するグループ: 1 件（NOTIFY_GROUP_IDS）」と自分のグループだけが出ること、警告が出ないことを確認します。
-
-### 実際に送ってみる
-
-1. アプリで、返却日を「明日」にして本を 1 冊借りた登録をします（テスト用。後で削除します）。
-2. 上と同じ手順で、今度は**チェックを入れずに**「Run workflow」を押します。
-3. 通知をオンにした iPhone に「明日返却：…」という通知が届けば成功です。
-4. テスト用の貸出は、ホームの一覧でその本をタップして貸出の詳細を開き、一番下の「**この登録を削除**」→「**削除する**」で消してください（本の詳細画面には削除はありません）。消し忘れると、翌々日から返却するまで毎朝「延滞中」の通知が家族全員に届きます。本の情報（タイトルなど）は残りますが、履歴や通知には出ません。
-
-> GitHub の定期実行は混雑していると数分〜数十分遅れることがあります。8 時ちょうどに届かなくても異常ではありません。
 
 ## 13. 無料枠の目安とトラブルシュート
 
@@ -389,18 +426,18 @@ GitHub のリポジトリのページで「**Settings**」→ 左メニューの
 
 **デプロイ（Actions の「デプロイ」）が失敗する**
 
-- 「GitHub の Variables が未設定です」→ 手順 7 の Variables を確認します（名前のつづり間違いに注意）。
-- 「FIREBASE_SERVICE_ACCOUNT が未設定です」→ 手順 7 の Secrets を確認します。
-- `HTTP Error: 403` / `Permission denied` / `PERMISSION_DENIED` → 手順 6-1 の `github-actions` のロールが足りません。5 つすべて付いているか確認します（付けてから反映まで数分かかることがあります）。
-- `Failed to get Firebase project` / `Invalid project id` → `VITE_FIREBASE_PROJECT_ID` がプロジェクト ID（表示名ではなく ID）になっているか確認します。
+- 「app.config.json の設定が足りません」→ 手順 4・5 の値が `app.config.json` に入っているか確認します（入れた変更が `main` に取り込まれているかも）。
+- 「FIREBASE_SERVICE_ACCOUNT が未設定です」→ 手順 6 の Secrets を確認します（名前のつづり間違いに注意）。
+- `HTTP Error: 403` / `Permission denied` / `PERMISSION_DENIED` → `github-actions` の権限が足りません。手順 5 の Cloud Shell で `karita_setup` をもう一度実行し、手順 6 の `FIREBASE_SERVICE_ACCOUNT` を新しい鍵で登録し直します（権限の反映まで数分かかることがあります）。
+- `Failed to get Firebase project` / `Invalid project id` → `app.config.json` の `projectId` がプロジェクト ID（表示名ではなく ID）になっているか確認します。
 - `Cloud Firestore API has not been used` / データベースが無い → 手順 3 で Firestore を作成したか確認します。
 - 「型チェック」「単体テスト」「セキュリティルールのテスト」の手順が赤い → テストが失敗したので、デプロイは行われていません（公開中のアプリは前のまま）。ログの `FAIL` や `✗`・`×` の行に、失敗したテストの名前が出ます。直前の変更が原因なので、その変更を直す（または元に戻す）と次の push でデプロイされます。「セキュリティルールのテスト」だけが `Java` や `emulator` のエラーで失敗したときは、GitHub 側の一時的な問題のことがあるので、「Re-run jobs」でやり直します。
 
 **ログインできない**
 
-- ホーム画面のアプリで Google ログイン後に画面が戻ってこない → `VITE_FIREBASE_AUTH_DOMAIN` が `<project>.web.app` になっているか、手順 4 の 6（リダイレクト URI の追加）を行ったか確認します。変更したらデプロイし直します。ログイン画面が「Google でログイン」の処理中のままになったときは、下の「キャンセル」を押すか、そのままメールアドレスでログインできます。
-- `auth/unauthorized-domain` → 手順 2 の 3（承認済みドメイン）を確認します。
-- `redirect_uri_mismatch`（Google の画面のエラー）→ 手順 4 の 6 を確認します。追加した直後は反映まで時間がかかることがあります。
+- ホーム画面のアプリで Google ログイン後に画面が戻ってこない → 手順 11 の 4（リダイレクト URI の追加）を行ったか確認します。`app.config.json` の `authDomain` は空のまま（自動で `<project>.web.app`）にします。ログイン画面が「Google でログイン」の処理中のままになったときは、下の「キャンセル」を押すか、そのままメールアドレスでログインできます。
+- `auth/unauthorized-domain` → 手順 11 の 5（承認済みドメイン）を確認します。
+- `redirect_uri_mismatch`（Google の画面のエラー）→ 手順 11 の 4 を確認します。追加した直後は反映まで時間がかかることがあります。
 - メールアドレスで登録したパスワードを忘れた → ログイン画面のパスワード再設定から、再設定用のメールを送れます。メールが届かないときは迷惑メールフォルダを確認してください。
 
 **「権限がありません」と表示される**
@@ -414,12 +451,12 @@ GitHub のリポジトリのページで「**Settings**」→ 左メニューの
 - **ホーム画面のアイコンから開いたアプリ**で通知をオンにしたか確認します（Safari のタブで開いた画面からは通知を受け取れません）。
 - iPhone の「設定」→「通知」→「かりた本」で通知が許可されているか、集中モード（おやすみモードなど）になっていないか確認します。
 - 「Actions」→「返却日の通知」が毎朝動いているか確認します。dry run で対象の本が表示されるかも確認します。
-- `VITE_VAPID_PUBLIC_KEY` と `VAPID_PUBLIC_KEY` が同じ値で、`VAPID_PRIVATE_KEY` と同じとき（手順 5）に作ったペアか確認します。鍵を作り直した場合は、全員がアプリの「設定」タブ →「返却日の通知」で一度オフにしてからオンにし直します。
-- `VAPID_SUBJECT` が `mailto:` から始まっているか確認します（Apple の通知サーバーはこれが無いと拒否します）。
-- ログに「グループが見つかりません」と出る → `NOTIFY_GROUP_IDS` の ID が正しいか確認します（手順 12）。グループを作り直した場合は、新しい ID に変えます。
-- ログに「NOTIFY_GROUP_IDS が設定されていないため…」の警告が出る → 手順 12 の「通知を送るグループを登録する」を行います。
+- `app.config.json` の `vapidPublicKey` と、Secrets の `VAPID_PRIVATE_KEY` が、同じとき（手順 5 の同じ実行）に作ったペアか確認します。鍵を作り直した場合は、全員がアプリの「設定」タブ →「返却日の通知」で一度オフにしてからオンにし直します。
+- 通知の送り主の連絡先（VAPID の subject）は、空ならアプリの URL（`https://<project>.web.app`）を使います。iPhone にだけ届かず、ログに `BadJwtToken` と出るときは、`app.config.json` の `vapidSubject` に `mailto:自分のメールアドレス` を入れて試します。
+- ログに「グループが見つかりません」と出る → `app.config.json` の `notifyGroupIds` の ID が正しいか確認します（手順 9）。グループを作り直した場合は、新しい ID に変えます。
+- ログに「NOTIFY_GROUP_IDS が設定されていないため…」の警告が出る → 手順 9 の「通知を送るグループを登録する」を行います。
 - ログに「送れない購読…を読み飛ばしました」と出る → このアプリが対応していないブラウザ（またはおかしな値）で登録された通知先です。家族の端末なら、その端末のアプリで通知を一度オフにしてからオンにし直します。失敗には数えません。
-- 「NOTIFY_SERVICE_ACCOUNT が未登録です」のエラーで止まる → 手順 6-3 の通知用の鍵を作り、Secrets に登録します。
+- 「NOTIFY_SERVICE_ACCOUNT が未登録です」のエラーで止まる → 手順 6 の Secrets に `NOTIFY_SERVICE_ACCOUNT` を登録します。
 - 「Firebase の初期化に失敗しました」・`PERMISSION_DENIED` → `NOTIFY_SERVICE_ACCOUNT` に `notify-bot` の JSON の中身がすべて貼り付けてあるか、`notify-bot` に Cloud Datastore ユーザーのロールが付いているか確認します。
 - アプリを削除してホーム画面に追加し直した場合は、通知もオンにし直します。
 
@@ -436,7 +473,7 @@ GitHub のリポジトリのページで「**Settings**」→ 左メニューの
 **本の情報（タイトル・表紙）が出ない**
 
 - 書誌情報のサービスが一時的に使えないことがあります。時間をおくか、タイトル検索・手入力で登録してください。
-- Google Books の上限に当たっている可能性があります。手順 11 の API キーを設定すると改善します。
+- Google Books の上限に当たっている可能性があります。手順 12 の API キーを設定すると改善します。
 
 **アプリの更新が反映されない**
 
@@ -447,7 +484,7 @@ GitHub のリポジトリのページで「**Settings**」→ 左メニューの
 
 - Firebase コンソールの「**使用量と請求額**」（または「Firestore Database」→「使用状況」）で読み取り・書き込みの数を確認します。家族の使い方（上の「Firestore の読み取りの目安」）に比べて極端に多いときは、家族以外の人がこのアプリでアカウントやグループを大量に作っている可能性があります（アプリの設定値は公開されているため、作ること自体は防げません）。
 - 「Firestore Database」→「データ」→ `groups` に、見覚えのないグループが大量にあれば、コンソールで削除します。
-- 毎朝の通知は、`NOTIFY_GROUP_IDS`（手順 12）を登録していれば家族のグループだけを読むので、ほかのグループが増えても通知の読み取りは増えません。登録していなければ登録してください。
+- 毎朝の通知は、`notifyGroupIds`（手順 9）を登録していれば家族のグループだけを読むので、ほかのグループが増えても通知の読み取りは増えません。登録していなければ登録してください。
 - 上限に達しても課金はされず、日本時間の 17 時（米国の夏時間の間は 16 時）を過ぎると元に戻ります。
 
 ---

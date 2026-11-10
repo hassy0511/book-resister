@@ -416,14 +416,22 @@ type CartItem = {                   // 型は src/state/borrowCartLogic.ts に�
 - 対象があるグループのメンバー全員の購読先に 1 通送る。本文は区分ごとに場所別の冊数（例：「明日返却：○○図書館 3冊」）。タップでアプリのホームを開く。
 - 本文の長さ（Apple の Web Push は暗号化後 4KB まで。超えると 413 で毎日失敗する）: 1 つの区分に並べる場所は冊数の多い順に 3 か所までで、残りは「ほか 2 か所 5冊」にまとめる。場所の名前は 40 文字（画面の上限）で切り、改行は空白にする。本文全体は 500 文字（`src/sw.ts` が表示時に切る長さと同じ `MAX_BODY_LENGTH`）までで、行の単位で切る。
 - 送信結果が 404/410 の購読は削除する。
-- 対象のグループ: `NOTIFY_GROUP_IDS`（Variables。カンマ区切り）に書いた家族のグループだけ。誰でもアカウントとグループを作れるため、部外者のグループ・購読を毎朝のジョブに処理させない。未設定なら互換のため全グループを処理し、警告（GitHub Actions では `::warning::`）を出す。グループ ID はログの `[ID] グループ「名前」` の行で確かめる（docs/setup.md 手順 12）。指定した ID のグループが無ければ失敗に数える。
+- 対象のグループ: `NOTIFY_GROUP_IDS`（`app.config.json` の `notifyGroupIds`。カンマ区切り）に書いた家族のグループだけ。誰でもアカウントとグループを作れるため、部外者のグループ・購読を毎朝のジョブに処理させない。未設定なら互換のため全グループを処理し、警告（GitHub Actions では `::warning::`）を出す。グループ ID はログの `[ID] グループ「名前」` の行で確かめる（docs/setup.md 手順 12）。指定した ID のグループが無ければ失敗に数える。
 - 送らない購読（`scripts/notify/subscription.ts`。`firestore.rules` の pushSubscriptions と `src/lib/push.ts` も同じ条件）:
   - endpoint が主要なブラウザのプッシュサービス（`web.push.apple.com`・`fcm.googleapis.com`・`updates.push.services.mozilla.com`・`*.notify.windows.com`。ホストの直後は `/`）でないもの。第三者のサーバーへ送ると VAPID の JWT（`VAPID_SUBJECT` の連絡先を含む）が渡るため。
   - p256dh が P-256 の公開鍵（65 バイトの base64url、曲線上の点）でない、auth が 16 バイトの base64url でないもの（暗号化の段階で必ず失敗するため）。
   - 読み飛ばした数は警告として出すだけで、失敗には数えない（終了コードに影響しない）。削除もしない（条件の誤りで家族の購読を消さないため）。
 - 送信の上限: 1 件の送信は 20 秒で打ち切る（web-push の `timeout` は無通信の時間しか見ないので、少しずつ応答する相手に備えて送信ごとの `https.Agent` を壊して接続を切る）。1 グループで送る購読はメンバーのものを新しい順に 20 件まで、同時に 5 件まで。グループは 4 つずつ並行に処理し、1 グループが遅れても他のグループを待たせない。終わった後に接続が残っていても 5 秒で終了する。
 - 終了コード: 送信の失敗・グループの処理の失敗が 1 件でもあれば 1。
-- 環境変数: `FIREBASE_SERVICE_ACCOUNT`（JSON）、`VAPID_PUBLIC_KEY`、`VAPID_PRIVATE_KEY`、`VAPID_SUBJECT`（`mailto:` か URL）、`APP_URL`、`NOTIFY_GROUP_IDS`。
+- 環境変数: `FIREBASE_SERVICE_ACCOUNT`（JSON）、`VAPID_PUBLIC_KEY`、`VAPID_PRIVATE_KEY`、`VAPID_SUBJECT`（`mailto:` か URL。空なら `APP_URL`）、`APP_URL`、`NOTIFY_GROUP_IDS`。
+  秘密の値（`FIREBASE_SERVICE_ACCOUNT` ← Secrets の `NOTIFY_SERVICE_ACCOUNT`、`VAPID_PRIVATE_KEY`）以外は、ワークフローの中で `scripts/appConfig.ts` が `app.config.json` から作る。
+
+### 6.1 設定の置き場所（app.config.json）
+
+- 秘密ではない設定（Firebase のウェブ設定、VAPID 公開鍵、通知するグループ ID、Google ログインの有無、Google Books のキー）はリポジトリの `app.config.json` に置く。GitHub の Variables は不要（同じ名前の Variables があればそちらを優先）。
+- `scripts/appConfig.ts` が `VITE_*`・`VAPID_PUBLIC_KEY`・`VAPID_SUBJECT`・`APP_URL`・`NOTIFY_GROUP_IDS` に変換して `$GITHUB_ENV` に書く（deploy.yml・notify.yml）。`authDomain` が空なら `<projectId>.web.app`、`APP_URL` は `https://<projectId>.web.app`。
+- `googleSignIn` が false のとき `VITE_GOOGLE_SIGN_IN=false` になり、ログイン画面に Google のボタンを出さない（`firebase.ts` の `isGoogleSignInEnabled`）。リダイレクト URI の設定（setup.md 手順 11）を済ませてから true にする。
+- 秘密の値（サービスアカウントの鍵 2 つと VAPID 秘密鍵）は GitHub の Secrets だけに置く。作成は Cloud Shell に貼る `scripts/cloudshell-setup.sh` で行う。
 - 鍵: 通知のワークフローには、`roles/datastore.user` だけを持つ通知専用のサービスアカウント（`notify-bot`）の鍵（Secrets `NOTIFY_SERVICE_ACCOUNT`）を環境変数 `FIREBASE_SERVICE_ACCOUNT` として渡す。デプロイ用の鍵（Hosting・ルールの管理権限を持つ `FIREBASE_SERVICE_ACCOUNT`）は渡さない。`NOTIFY_SERVICE_ACCOUNT` が未登録のときはデプロイ用の鍵に切り替えず、エラーで止める。
 - `--dry-run` で送信せずに内容を表示。
 
