@@ -9,6 +9,7 @@ import { useCallback, useMemo, useState, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import type { Loan, WithId } from '../../types';
 import { useActiveLoans } from '../../data/loans';
+import { useCoverBackfill } from '../../data/coverBackfill';
 import { useLocations } from '../../data/locations';
 import { useGroup } from '../../group/GroupProvider';
 import { dueStatus, type DueStatus } from '../../lib/date';
@@ -46,8 +47,13 @@ const ROW_TONE: Record<DueStatus, string | undefined> = {
 };
 
 export default function HomePage() {
-  const { members, memberName } = useGroup();
+  const { groupId, members, memberName } = useGroup();
   const loansQuery = useActiveLoans();
+  // 借りたときに表紙が取れなかった本は、表示したついでに探し直す（1 冊 1 日 1 回まで）
+  useCoverBackfill(
+    groupId,
+    loansQuery.data?.map((l) => ({ bookId: l.bookId, isbn: l.book.isbn, coverUrl: l.book.coverUrl })),
+  );
   const locationsQuery = useLocations({ includeArchived: true });
   const today = useToday();
 

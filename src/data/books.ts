@@ -1,6 +1,7 @@
 /**
  * 本（groups/{gid}/books）。ISBN がある本の ID は `isbn-<ISBN13>`、無い本は自動 ID。
  */
+import { isRetiredCoverUrl } from '../lib/coverUrls';
 import { useMemo } from 'react';
 import {
   collection,
@@ -117,7 +118,9 @@ export function bookFillPatch(
   const publisher = trimOrNull(c.publisher);
   if (!trimOrNull(existing.publisher) && publisher) patch.publisher = publisher;
   const coverUrl = cleanCoverUrl(c.coverUrl);
-  if (!trimOrNull(existing.coverUrl) && coverUrl) patch.coverUrl = coverUrl;
+  const existingCover = trimOrNull(existing.coverUrl);
+  // 提供が終わった NDL の書影 URL は空とみなして差し替える
+  if ((!existingCover || isRetiredCoverUrl(existingCover)) && coverUrl) patch.coverUrl = coverUrl;
   if (existing.seriesId == null && series.seriesId) {
     patch.seriesId = series.seriesId;
     const volume = existing.volume ?? cleanVolume(series.volume);

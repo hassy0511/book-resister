@@ -14,6 +14,7 @@ import { useLocations } from '../../data/locations';
 import { bookReadState } from '../../data/readStatus';
 import { useSeries } from '../../data/series';
 import { useRequiredGroup } from '../../group/GroupProvider';
+import { useCoverBackfill } from '../../data/coverBackfill';
 import { formatDate } from '../../lib/date';
 import { formatIsbn } from '../../lib/isbn';
 import { useBorrowCart } from '../../state/borrowCart';
@@ -107,6 +108,7 @@ type BookDetailViewProps = {
 
 function BookDetailView({ book, loans, locationNames, series, seriesLoading }: BookDetailViewProps) {
   const { groupId, memberName } = useRequiredGroup();
+  useCoverBackfill(groupId, [{ bookId: book.id, isbn: book.isbn, coverUrl: book.coverUrl }]);
   const navigate = useNavigate();
   const toast = useToast();
   const cart = useBorrowCart();

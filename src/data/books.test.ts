@@ -47,6 +47,13 @@ const candidate = (patch: Partial<BookCandidate> = {}): BookCandidate => ({
 });
 
 describe('bookFillPatch', () => {
+  it('提供が終わった NDL の書影 URL は空とみなして新しい表紙に差し替える', () => {
+    const existing: BookFields = { ...baseBook, coverUrl: 'https://ndlsearch.ndl.go.jp/thumbnail/9784834000825.jpg' };
+    expect(
+      bookFillPatch(existing, candidate({ coverUrl: 'https://books.google.com/books/content?id=x' }), { seriesId: null, volume: null }),
+    ).toMatchObject({ coverUrl: 'https://books.google.com/books/content?id=x' });
+  });
+
   it('既存の値は上書きしない', () => {
     expect(bookFillPatch(baseBook, candidate({ title: '別のタイトル', publisher: '別の出版社' }), { seriesId: null, volume: null })).toEqual({});
   });

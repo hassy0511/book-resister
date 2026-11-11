@@ -9,6 +9,7 @@ import type { DateString, Loan, Location, ReadStatus, WithId } from '../../types
 import { deleteLoan, undoReturn, updateLoan, useLoan } from '../../data/loans';
 import { useLocations } from '../../data/locations';
 import { useRequiredGroup } from '../../group/GroupProvider';
+import { useCoverBackfill } from '../../data/coverBackfill';
 import { formatDate } from '../../lib/date';
 import { BookCover } from '../../components/BookCover';
 import { DueBadge } from '../../components/DueBadge';
@@ -102,6 +103,7 @@ type LoanDetailViewProps = {
 
 function LoanDetailView({ loan, locations, onLeaving }: LoanDetailViewProps) {
   const { groupId, members, memberName } = useRequiredGroup();
+  useCoverBackfill(groupId, [{ bookId: loan.bookId, isbn: loan.book.isbn, coverUrl: loan.book.coverUrl }]);
   const navigate = useNavigate();
   const toast = useToast();
   const today = useToday();
