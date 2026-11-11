@@ -2,10 +2,9 @@
 # （main へのデプロイ（deploy.yml）も、デプロイの前に同じテストを自分のジョブの中で行い、失敗したらデプロイしない）
 name: CI
 
-# push は main だけ（PR のブランチで push と pull_request の 2 回走らないようにして、無料枠の時間を節約する）
+# main への push では動かさない（デプロイ（deploy.yml）が同じテストを行うので、二重に走らせず無料枠の時間を節約する）。
+# プルリクエストと手動実行のときだけ動く。
 on:
-  push:
-    branches: [main]
   pull_request:
   workflow_dispatch:
 
