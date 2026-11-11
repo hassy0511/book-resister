@@ -208,7 +208,7 @@ function CheckResultContent({ isbn, open, onContinue }: { isbn: string; open: bo
     body = (
       <div className={styles.content}>
         <div className={styles.book}>
-          <BookCover title={title ?? '？'} coverUrl={coverUrl} size="md" />
+          <BookCover title={title ?? '？'} coverUrl={coverUrl} isbn={isbn} size="md" />
           <div className={styles.bookText}>
             {title ? (
               <p className={styles.title}>{title}</p>
@@ -298,7 +298,7 @@ function CheckResultContent({ isbn, open, onContinue }: { isbn: string; open: bo
                 return (
                   <div key={b.id} className={styles.sameTitleBook}>
                     <div className={styles.sameTitleHead}>
-                      <BookCover title={b.title} coverUrl={b.coverUrl} size="sm" />
+                      <BookCover title={b.title} coverUrl={b.coverUrl} isbn={b.isbn} size="sm" />
                       <div className={styles.bookText}>
                         <p className={styles.sameTitleTitle}>{b.title}</p>
                         <p className={styles.verdictSub}>

@@ -48,7 +48,7 @@ export function fillMissing(base: BookCandidate, extra: BookCandidate): BookCand
 }
 
 export type FinalizeOptions = {
-  /** 表紙が無く ISBN がある場合に NDL の書影 URL を入れるか（既定 true） */
+  /** 表紙が無く ISBN がある場合に NDL の書影 URL を入れるか（既定 false。NDL の書影 API は 2026-03-31 に提供終了。表示側は lib/coverUrls の候補を試す） */
   ndlThumbnail?: boolean;
 };
 
@@ -73,7 +73,7 @@ export function finalizeCandidate(c: BookCandidate, opts: FinalizeOptions = {}):
     seriesName = guessSeries(title).seriesName ?? (title || null);
   }
   let coverUrl = c.coverUrl;
-  if (!coverUrl && isbn && (opts.ndlThumbnail ?? true)) coverUrl = ndlThumbnailUrl(isbn);
+  if (!coverUrl && isbn && (opts.ndlThumbnail ?? false)) coverUrl = ndlThumbnailUrl(isbn);
   return { ...c, isbn, title, seriesName, volume, coverUrl };
 }
 

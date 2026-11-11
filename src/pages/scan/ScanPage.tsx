@@ -151,7 +151,7 @@ export default function ScanPage() {
                     onClick={() => setRemoveTarget(item)}
                     aria-label={`${title ?? (item.status === 'loading' ? '取得中の本' : 'タイトル不明の本')}（タップで外す）`}
                   >
-                    <BookCover title={title ?? '本'} coverUrl={item.candidate?.coverUrl} size="sm" />
+                    <BookCover title={title ?? '本'} coverUrl={item.candidate?.coverUrl} isbn={item.candidate?.isbn ?? item.isbn} size="sm" />
                     {item.status === 'loading' ? (
                       <span className={styles.thumbOverlay}>
                         <Spinner size="sm" label="取得中" />

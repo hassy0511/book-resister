@@ -275,7 +275,7 @@ export default function AddBookPage() {
                     onClick={() => addCandidate(c)}
                     aria-label={`${c.title}${inCart ? '（追加済み）' : 'を追加'}`}
                   >
-                    <BookCover title={c.title} coverUrl={c.coverUrl} size="sm" />
+                    <BookCover title={c.title} coverUrl={c.coverUrl} isbn={c.isbn} size="sm" />
                     <span className={styles.rowMain}>
                       <span className={styles.rowTitle}>{c.title}</span>
                       {meta ? <span className={styles.rowMeta}>{meta}</span> : null}
@@ -365,7 +365,7 @@ export default function AddBookPage() {
                       onClick={() => addExisting(b)}
                       aria-label={`${b.title}${inCart ? '（追加済み）' : 'を追加'}`}
                     >
-                      <BookCover title={b.title} coverUrl={b.coverUrl} size="sm" />
+                      <BookCover title={b.title} coverUrl={b.coverUrl} isbn={b.isbn} size="sm" />
                       <span className={styles.rowMain}>
                         <span className={styles.rowTitle}>{b.title}</span>
                         {meta ? <span className={styles.rowMeta}>{meta}</span> : null}

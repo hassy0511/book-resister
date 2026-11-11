@@ -158,7 +158,7 @@ function BookDetailView({ book, loans, locationNames, series, seriesLoading }: B
       {/* 本 */}
       <Card padded={false}>
         <div className={styles.hero}>
-          <BookCover title={book.title} coverUrl={book.coverUrl} size="lg" alt={`${book.title}の表紙`} />
+          <BookCover title={book.title} coverUrl={book.coverUrl} isbn={book.isbn} size="lg" alt={`${book.title}の表紙`} />
           <div className={styles.heroText}>
             <h2 className={styles.title}>{book.title}</h2>
             {authors ? <p className={styles.authors}>{authors}</p> : null}

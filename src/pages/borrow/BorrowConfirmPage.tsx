@@ -577,7 +577,7 @@ function CartItemCard({
   return (
     <Card className={styles.itemCard}>
       <div className={styles.itemHead}>
-        <BookCover title={title ?? '本'} coverUrl={candidate?.coverUrl} size="md" />
+        <BookCover title={title ?? '本'} coverUrl={candidate?.coverUrl} isbn={candidate?.isbn ?? item.isbn} size="md" />
         <div className={styles.itemText}>
           {loading ? (
             <p className={styles.itemLoading}>
